@@ -84,56 +84,36 @@ const TopMovers = () => {
   }
 
   return (
-    <Card className="bg-gradient-to-br from-card to-card/50 border-accent/20">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Activity className="h-5 w-5 text-primary" />
-          Top Movers
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {movers.map((stock) => (
-          <div
-            key={stock.symbol}
-            className="flex items-center justify-between p-4 rounded-lg border bg-gradient-to-r from-background to-muted/20 hover:from-muted/30 hover:to-muted/40 transition-all duration-200"
-          >
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                <span className="text-sm font-semibold text-primary">
-                  {stock.symbol.charAt(0)}
-                </span>
+    <section>
+      <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {movers.map((stock) => {
+          const positive = stock.change >= 0;
+          return (
+            <div key={stock.symbol} className="bg-card p-4 rounded-lg">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                  <span className="text-sm font-bold">{stock.symbol.charAt(0)}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold tracking-wide">{stock.symbol}</div>
+                  <div className="text-sm text-muted-foreground truncate max-w-[18ch]" title={stock.name}>
+                    {stock.name}
+                  </div>
+                </div>
               </div>
-              <div>
-                <p className="font-semibold text-foreground">{stock.symbol}</p>
-                <p className="text-sm text-muted-foreground truncate max-w-32">
-                  {stock.name}
-                </p>
-              </div>
-            </div>
-
-            <div className="text-right">
-              <p className="font-semibold text-foreground">
-                ${stock.price.toFixed(2)}
-              </p>
-              <div className="flex items-center gap-1">
-                {stock.change >= 0 ? (
-                  <TrendingUp className="h-3 w-3 text-primary" />
-                ) : (
-                  <TrendingDown className="h-3 w-3 text-destructive" />
-                )}
-                <Badge
-                  variant={stock.change >= 0 ? "default" : "destructive"}
-                  className="text-xs"
-                >
-                  {stock.change >= 0 ? "+" : ""}
-                  {stock.changePercent.toFixed(2)}%
-                </Badge>
+              
+              <div className="flex justify-between items-center">
+                <div className="font-bold">${stock.price.toFixed(2)}</div>
+                <div className={positive ? "text-green-400" : "text-red-400"}>
+                  {positive ? "+" : ""}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
+          );
+        })}
+      </div>
+    </section>
   );
 };
 

@@ -66,105 +66,65 @@ const StockSearch = () => {
   };
 
   return (
-    <Card className="bg-gradient-to-br from-card to-card/50 border-accent/20">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Search className="h-5 w-5 text-primary" />
-          Stock Search
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search stocks by symbol or company name..."
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              handleSearch(e.target.value);
-            }}
-            className="pl-10 bg-background/50"
-          />
+    <section>
+      <h2 className="text-2xl font-semibold mb-4">🔍 Stock Search</h2>
+      
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search stocks by symbol or company name..."
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            handleSearch(e.target.value);
+          }}
+          className="pl-10 bg-card"
+        />
+      </div>
+
+      {isSearching && (
+        <div className="text-center py-4">
+          <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+          <p className="text-sm text-muted-foreground mt-2">Searching...</p>
         </div>
+      )}
 
-        {isSearching && (
-          <div className="text-center py-4">
-            <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-            <p className="text-sm text-muted-foreground mt-2">Searching...</p>
-          </div>
-        )}
-
-        {results.length > 0 && (
-          <div className="space-y-2">
-            {results.map((stock) => (
-              <div
-                key={stock.symbol}
-                className="flex items-center justify-between p-3 rounded-lg border bg-gradient-to-r from-background to-muted/20 hover:from-muted/30 hover:to-muted/40 transition-all duration-200"
-              >
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-semibold text-primary">
-                      {stock.symbol.charAt(0)}
-                    </span>
-                  </div>
-                  
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-foreground">{stock.symbol}</p>
-                      <Badge variant="outline" className="text-xs">
-                        {stock.exchange}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {stock.name}
-                    </p>
-                  </div>
-
-                  <div className="text-right flex-shrink-0">
-                    <p className="font-semibold text-foreground">
-                      ${stock.price.toFixed(2)}
-                    </p>
-                    <div className="flex items-center gap-1 justify-end">
-                      {stock.change >= 0 ? (
-                        <TrendingUp className="h-3 w-3 text-primary" />
-                      ) : (
-                        <TrendingUp className="h-3 w-3 text-destructive rotate-180" />
-                      )}
-                      <span
-                        className={`text-xs ${
-                          stock.change >= 0 ? "text-primary" : "text-destructive"
-                        }`}
-                      >
-                        {stock.change >= 0 ? "+" : ""}
-                        {stock.changePercent.toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
+      {results.length > 0 && (
+        <div className="space-y-2">
+          {results.map((stock) => (
+            <div
+              key={stock.symbol}
+              className="bg-card p-4 rounded-lg flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                  <span className="text-sm font-bold">{stock.symbol.charAt(0)}</span>
                 </div>
-
-                <div className="flex gap-2 ml-3">
-                  <Button size="icon" variant="ghost" className="h-8 w-8">
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" className="h-8 w-8">
-                    <Plus className="h-4 w-4" />
-                  </Button>
+                <div>
+                  <div className="font-semibold">{stock.symbol}</div>
+                  <div className="text-sm text-muted-foreground">{stock.name}</div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+              
+              <div className="text-right">
+                <div className="font-bold">${stock.price.toFixed(2)}</div>
+                <div className={stock.change >= 0 ? "text-green-400" : "text-red-400"}>
+                  {stock.change >= 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
-        {searchQuery && !isSearching && results.length === 0 && (
-          <div className="text-center py-8">
-            <Search className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">
-              No stocks found for "{searchQuery}"
-            </p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      {searchQuery && !isSearching && results.length === 0 && (
+        <div className="text-center py-8">
+          <p className="text-sm text-muted-foreground">
+            No stocks found for "{searchQuery}"
+          </p>
+        </div>
+      )}
+    </section>
   );
 };
 
