@@ -1,9 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Search, TrendingUp, Plus, Eye } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 interface SearchResult {
   symbol: string;
@@ -15,6 +14,7 @@ interface SearchResult {
 }
 
 const StockSearch = () => {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -94,7 +94,8 @@ const StockSearch = () => {
           {results.map((stock) => (
             <div
               key={stock.symbol}
-              className="bg-card p-4 rounded-lg flex items-center justify-between"
+              className="bg-card p-4 rounded-lg flex items-center justify-between hover:bg-muted/30 transition-colors cursor-pointer"
+              onClick={() => navigate(`/stock/${stock.symbol}`)}
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
