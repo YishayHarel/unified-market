@@ -40,13 +40,6 @@ const TopMovers = () => {
         change: 12.67,
         changePercent: 3.02,
       },
-      {
-        symbol: "MSFT",
-        name: "Microsoft Corporation",
-        price: 378.92,
-        change: -4.23,
-        changePercent: -1.10,
-      },
     ];
 
     setTimeout(() => {
@@ -60,7 +53,7 @@ const TopMovers = () => {
       <section>
         <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="bg-card p-4 rounded-lg animate-pulse">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-8 h-8 rounded-full bg-muted"></div>
