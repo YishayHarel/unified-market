@@ -18,40 +18,69 @@ const StockSearch = () => {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Smart ranking function similar to Robinhood
+  // Enhanced search algorithm similar to Robinhood
   const calculateSearchScore = (stock: any, query: string): number => {
     const symbol = stock.symbol.toLowerCase();
     const name = stock.name.toLowerCase();
-    const marketCapWeight = Math.log(Math.max(stock.market_cap || 1000000, 1000000)) / 100;
+    const queryLower = query.toLowerCase();
+    
+    // Stronger market cap weighting for large companies
+    const marketCap = stock.market_cap || 0;
+    const marketCapWeight = marketCap > 0 ? Math.log(marketCap) * 5 : 0;
     
     let score = 0;
     
     // Exact symbol match (highest priority)
-    if (symbol === query) score += 1000;
+    if (symbol === queryLower) {
+      score += 10000 + marketCapWeight;
+      return score;
+    }
     
-    // Symbol starts with query (very high priority)
-    else if (symbol.startsWith(query)) score += 800;
+    // Exact company name match (very high priority)
+    if (name === queryLower) {
+      score += 9000 + marketCapWeight;
+      return score;
+    }
     
-    // Company name starts with query (high priority)
-    else if (name.startsWith(query)) score += 600;
+    // Company name starts with query (prioritize large companies heavily)
+    if (name.startsWith(queryLower)) {
+      score += 8000 + marketCapWeight * 2;
+    }
+    
+    // Symbol starts with query
+    else if (symbol.startsWith(queryLower)) {
+      score += 7000 + marketCapWeight;
+    }
+    
+    // Company name word starts with query (for multi-word names)
+    const nameWords = name.split(/[\s,.-]+/).filter(word => word.length > 0);
+    const exactWordMatch = nameWords.some(word => word.startsWith(queryLower));
+    if (exactWordMatch && !name.startsWith(queryLower)) {
+      score += 6000 + marketCapWeight * 1.5;
+    }
     
     // Symbol contains query
-    else if (symbol.includes(query)) score += 400;
+    else if (symbol.includes(queryLower)) {
+      score += 4000 + marketCapWeight * 0.5;
+    }
     
     // Company name contains query
-    else if (name.includes(query)) score += 200;
+    else if (name.includes(queryLower)) {
+      score += 3000 + marketCapWeight * 0.5;
+    }
     
-    // Partial word matches in company name
-    const nameWords = name.split(' ');
-    const matchingWords = nameWords.filter(word => 
-      word.startsWith(query) || word.includes(query)
+    // Partial word matches with higher weight for larger companies
+    const partialMatches = nameWords.filter(word => 
+      word.includes(queryLower) && word !== queryLower
     ).length;
-    score += matchingWords * 100;
+    score += partialMatches * (500 + marketCapWeight * 0.2);
     
-    // Add market cap weighting as tiebreaker
-    score += marketCapWeight;
+    // Extra boost for very large companies (market cap > 100B)
+    if (marketCap > 100000000000) {
+      score += 1000;
+    }
     
-    return score;
+    return Math.max(score, 0);
   };
 
   // Debounced search function
