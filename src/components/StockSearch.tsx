@@ -1,15 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, TrendingUp, Plus, Eye } from "lucide-react";
+import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 
 interface SearchResult {
   symbol: string;
   name: string;
-  price: number;
-  change: number;
-  changePercent: number;
   exchange: string;
 }
 
@@ -19,7 +16,7 @@ const StockSearch = () => {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Mock search function
+  // Real search function using Supabase
   const handleSearch = async (query: string) => {
     if (!query.trim()) {
       setResults([]);
@@ -28,41 +25,22 @@ const StockSearch = () => {
 
     setIsSearching(true);
 
-    // Mock search results
-    const mockResults: SearchResult[] = [
-      {
-        symbol: "AAPL",
-        name: "Apple Inc.",
-        price: 175.43,
-        change: 2.15,
-        changePercent: 1.24,
-        exchange: "NASDAQ"
-      },
-      {
-        symbol: "AMZN",
-        name: "Amazon.com Inc.",
-        price: 153.92,
-        change: -1.87,
-        changePercent: -1.20,
-        exchange: "NASDAQ"
-      },
-      {
-        symbol: "GOOGL",
-        name: "Alphabet Inc Class A",
-        price: 142.56,
-        change: 0.89,
-        changePercent: 0.63,
-        exchange: "NASDAQ"
-      }
-    ].filter(stock => 
-      stock.symbol.toLowerCase().includes(query.toLowerCase()) ||
-      stock.name.toLowerCase().includes(query.toLowerCase())
-    );
+    try {
+      const { data: stocks, error } = await supabase
+        .from('stocks')
+        .select('symbol, name, exchange')
+        .or(`symbol.ilike.%${query}%,name.ilike.%${query}%`)
+        .limit(10);
 
-    setTimeout(() => {
-      setResults(mockResults);
+      if (error) throw error;
+
+      setResults(stocks || []);
+    } catch (error) {
+      console.error('Error searching stocks:', error);
+      setResults([]);
+    } finally {
       setIsSearching(false);
-    }, 500);
+    }
   };
 
   return (
@@ -108,10 +86,7 @@ const StockSearch = () => {
               </div>
               
               <div className="text-right">
-                <div className="font-bold">${stock.price.toFixed(2)}</div>
-                <div className={stock.change >= 0 ? "text-green-400" : "text-red-400"}>
-                  {stock.change >= 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
-                </div>
+                <div className="text-sm text-muted-foreground">{stock.exchange}</div>
               </div>
             </div>
           ))}
