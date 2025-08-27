@@ -25,6 +25,7 @@ const StockChart = ({ symbol, period }: StockChartProps) => {
   const [loading, setLoading] = useState(true);
   const [hoverData, setHoverData] = useState<HoverData | null>(null);
   const [isHovering, setIsHovering] = useState(false);
+  const [dayStartPrice, setDayStartPrice] = useState<number>(175.43);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -137,6 +138,7 @@ const StockChart = ({ symbol, period }: StockChartProps) => {
     };
 
     const mockData = generateRealtimeData(period);
+    setDayStartPrice(mockData[0]?.price || 175.43);
     
     setTimeout(() => {
       setChartData(mockData);
@@ -197,10 +199,9 @@ const StockChart = ({ symbol, period }: StockChartProps) => {
   const chartWidth = 800;
   const chartHeight = 300;
 
-  // Determine if stock is up or down overall
-  const firstPrice = chartData[0]?.price || 0;
-  const lastPrice = chartData[chartData.length - 1]?.price || 0;
-  const isUp = lastPrice >= firstPrice;
+  // Determine if stock is up or down based on hover or current price
+  const currentPrice = hoverData?.price || chartData[chartData.length - 1]?.price || 0;
+  const isUp = currentPrice >= dayStartPrice;
   const strokeColor = isUp ? 'hsl(142 71% 60%)' : 'hsl(0 72% 60%)';
 
   // Create SVG path
@@ -215,7 +216,7 @@ const StockChart = ({ symbol, period }: StockChartProps) => {
       {/* Price Display */}
       <div className="absolute top-0 left-0 z-10 mb-4">
         <div className="text-2xl font-bold">
-          ${(hoverData?.price || lastPrice).toFixed(2)}
+          ${currentPrice.toFixed(2)}
         </div>
         {hoverData && (
           <div className="text-sm text-muted-foreground">
@@ -238,6 +239,18 @@ const StockChart = ({ symbol, period }: StockChartProps) => {
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
       >
+        {/* Dotted Reference Line at Day Start Price */}
+        <line
+          x1={padding}
+          y1={chartHeight - padding - ((dayStartPrice - minPrice) / priceRange) * (chartHeight - padding * 2)}
+          x2={chartWidth - padding}
+          y2={chartHeight - padding - ((dayStartPrice - minPrice) / priceRange) * (chartHeight - padding * 2)}
+          stroke="hsl(var(--muted-foreground))"
+          strokeWidth="1"
+          strokeDasharray="4,4"
+          opacity="0.5"
+        />
+
         {/* Chart Line */}
         <path
           d={pathData}
