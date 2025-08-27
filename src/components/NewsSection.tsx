@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 
+// Force cache refresh
+
 interface NewsArticle {
   title: string;
   description: string;
