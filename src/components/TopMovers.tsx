@@ -142,7 +142,7 @@ const TopMovers = () => {
                 <div className="font-bold">
                   {stock.price > 0 ? `$${stock.price.toFixed(2)}` : 'Loading...'}
                 </div>
-                <div className={stock.change >= 0 ? "text-green-400" : "text-red-400"}>
+                <div className={stock.change >= 0 ? "text-primary" : "text-destructive"}>
                   {stock.price > 0 ? (
                     `${stock.change >= 0 ? "+" : ""}${stock.changePercent.toFixed(2)}%`
                   ) : (

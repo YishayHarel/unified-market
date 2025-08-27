@@ -1,20 +1,4 @@
 import { useState, useEffect } from "react";
-import { Calendar, TrendingUp, Clock, Building } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-
-interface EarningsEvent {
-  id: string;
-  symbol: string;
-  company: string;
-  date: string;
-  time: string;
-  estimate: number;
-  previous: number;
-  marketCap: string;
-}
 
 const EarningsCalendar = () => {
   const [loading, setLoading] = useState(true);

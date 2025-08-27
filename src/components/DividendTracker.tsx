@@ -54,7 +54,7 @@ const DividendTracker = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-card p-4 rounded-lg">
           <div className="text-sm text-muted-foreground mb-1">Total Annual</div>
-          <div className="text-2xl font-bold text-green-400">
+          <div className="text-2xl font-bold text-primary">
             ${totalAnnualDividends.toLocaleString()}
           </div>
         </div>
@@ -66,7 +66,7 @@ const DividendTracker = () => {
         
         <div className="bg-card p-4 rounded-lg">
           <div className="text-sm text-muted-foreground mb-1">Monthly Est.</div>
-          <div className="text-2xl font-bold text-blue-400">
+          <div className="text-2xl font-bold text-accent">
             ${Math.round(totalAnnualDividends / 12).toLocaleString()}
           </div>
         </div>
@@ -86,7 +86,7 @@ const DividendTracker = () => {
                 </div>
               </div>
               <div className="text-right">
-                <div className="font-bold text-green-400">${stock.annualDividend}</div>
+                <div className="font-bold text-primary">${stock.annualDividend}</div>
                 <div className="text-sm text-muted-foreground">{stock.yield.toFixed(2)}% yield</div>
               </div>
             </div>
