@@ -20,7 +20,7 @@ const NewsSection = () => {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [news, setNews] = useState<NewsArticle[]>([]);
-  const [displayedCount, setDisplayedCount] = useState(6);
+  const [displayedCount, setDisplayedCount] = useState(3);
 
   const fetchNews = async () => {
     try {
@@ -43,7 +43,15 @@ const NewsSection = () => {
   const handleLoadMore = () => {
     setLoadingMore(true);
     setTimeout(() => {
-      setDisplayedCount(prev => Math.min(prev + 6, news.length));
+      setDisplayedCount(prev => {
+        if (prev === 3) {
+          // First load more: show 10 total (3 + 7)
+          return Math.min(10, news.length);
+        } else {
+          // Subsequent load more: add 10 more each time
+          return Math.min(prev + 10, news.length);
+        }
+      });
       setLoadingMore(false);
     }, 500);
   };

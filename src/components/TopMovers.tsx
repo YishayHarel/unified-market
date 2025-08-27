@@ -57,7 +57,8 @@ const TopMovers = () => {
               } : null;
             })
             .filter((mover: any) => mover !== null && mover.price > 0)
-            .sort((a: any, b: any) => Math.abs(b.changePercent) - Math.abs(a.changePercent));
+            .sort((a: any, b: any) => Math.abs(b.changePercent) - Math.abs(a.changePercent))
+            .slice(0, 3);
 
           setMovers(moversData);
         } else {
