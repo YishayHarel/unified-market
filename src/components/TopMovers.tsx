@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface StockMover {
   symbol: string;
@@ -8,7 +9,6 @@ interface StockMover {
   price: number;
   change: number;
   changePercent: number;
-  logo?: string;
 }
 
 const TopMovers = () => {
@@ -16,36 +16,53 @@ const TopMovers = () => {
   const [movers, setMovers] = useState<StockMover[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Mock data for demonstration
-  useEffect(() => {
-    const mockMovers: StockMover[] = [
-      {
-        symbol: "AAPL",
-        name: "Apple Inc.",
-        price: 175.43,
-        change: 5.32,
-        changePercent: 3.13,
-      },
-      {
-        symbol: "TSLA",
-        name: "Tesla Inc.",
-        price: 248.87,
-        change: -8.45,
-        changePercent: -3.28,
-      },
-      {
-        symbol: "NVDA",
-        name: "NVIDIA Corporation",
-        price: 432.15,
-        change: 12.67,
-        changePercent: 3.02,
-      },
-    ];
+  const fetchTopMovers = async () => {
+    try {
+      // Get a sample of popular stocks from your database
+      const { data: stocks, error: stocksError } = await supabase
+        .from('stocks')
+        .select('symbol, name')
+        .in('symbol', ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'TSLA', 'META', 'AMZN', 'NFLX'])
+        .order('market_cap', { ascending: false });
 
-    setTimeout(() => {
-      setMovers(mockMovers);
+      if (stocksError) throw stocksError;
+
+      if (stocks && stocks.length > 0) {
+        // Get real-time prices for these stocks
+        const symbols = stocks.map(stock => stock.symbol);
+        const { data: priceData, error: priceError } = await supabase.functions.invoke('get-stock-prices', {
+          body: { symbols }
+        });
+
+        if (priceError) throw priceError;
+
+        if (priceData) {
+          const moversData = priceData
+            .map((price: any) => {
+              const stock = stocks.find(s => s.symbol === price.symbol);
+              return stock ? {
+                symbol: price.symbol,
+                name: stock.name,
+                price: price.price,
+                change: price.change,
+                changePercent: price.changePercent
+              } : null;
+            })
+            .filter((mover: any) => mover !== null && mover.price > 0)
+            .sort((a: any, b: any) => Math.abs(b.changePercent) - Math.abs(a.changePercent));
+
+          setMovers(moversData);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching top movers:', error);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
+  };
+
+  useEffect(() => {
+    fetchTopMovers();
   }, []);
 
   if (loading) {
