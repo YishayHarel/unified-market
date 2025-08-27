@@ -18,66 +18,133 @@ const StockSearch = () => {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Enhanced search algorithm similar to Robinhood
+  // Advanced search ranking algorithm optimized for financial search
   const calculateSearchScore = (stock: any, query: string): number => {
     const symbol = stock.symbol.toLowerCase();
     const name = stock.name.toLowerCase();
-    const queryLower = query.toLowerCase();
+    const queryLower = query.toLowerCase().trim();
     
-    // Stronger market cap weighting for large companies
+    if (!queryLower) return 0;
+    
+    // Enhanced market cap weighting with tiers
     const marketCap = stock.market_cap || 0;
-    const marketCapWeight = marketCap > 0 ? Math.log(marketCap) * 5 : 0;
+    let marketCapMultiplier = 1;
+    
+    if (marketCap >= 1000000000000) { // Trillion+ (AAPL, MSFT, etc.)
+      marketCapMultiplier = 10;
+    } else if (marketCap >= 500000000000) { // 500B+ 
+      marketCapMultiplier = 8;
+    } else if (marketCap >= 100000000000) { // 100B+
+      marketCapMultiplier = 6;
+    } else if (marketCap >= 50000000000) { // 50B+
+      marketCapMultiplier = 4;
+    } else if (marketCap >= 10000000000) { // 10B+
+      marketCapMultiplier = 2;
+    }
     
     let score = 0;
     
-    // Exact symbol match (highest priority)
+    // TIER 1: Exact matches (highest priority)
     if (symbol === queryLower) {
-      score += 10000 + marketCapWeight;
-      return score;
+      return 100000 * marketCapMultiplier;
     }
     
-    // Exact company name match (very high priority)
+    // TIER 2: Perfect company name match
     if (name === queryLower) {
-      score += 9000 + marketCapWeight;
-      return score;
+      return 90000 * marketCapMultiplier;
     }
     
-    // Company name starts with query (prioritize large companies heavily)
-    if (name.startsWith(queryLower)) {
-      score += 8000 + marketCapWeight * 2;
+    // TIER 3: Symbol prefix match (very important for stock symbols)
+    if (symbol.startsWith(queryLower)) {
+      score = 80000 * marketCapMultiplier;
     }
     
-    // Symbol starts with query
-    else if (symbol.startsWith(queryLower)) {
-      score += 7000 + marketCapWeight;
+    // TIER 4: Company name prefix match (critical for brand searches like "apple")
+    else if (name.startsWith(queryLower)) {
+      score = 70000 * marketCapMultiplier;
     }
     
-    // Company name word starts with query (for multi-word names)
-    const nameWords = name.split(/[\s,.-]+/).filter(word => word.length > 0);
-    const exactWordMatch = nameWords.some(word => word.startsWith(queryLower));
-    if (exactWordMatch && !name.startsWith(queryLower)) {
-      score += 6000 + marketCapWeight * 1.5;
+    // TIER 5: Word-level matches in company name
+    else {
+      const nameWords = name.split(/[\s,.-]+/).filter(word => word.length > 2);
+      
+      // Check for exact word matches at start of words
+      const exactWordStart = nameWords.find(word => word.startsWith(queryLower));
+      if (exactWordStart) {
+        // Bonus for shorter matches (more precise)
+        const lengthBonus = Math.max(0, 10 - queryLower.length) * 1000;
+        score = (60000 + lengthBonus) * marketCapMultiplier;
+      }
+      
+      // Check for exact word matches anywhere
+      else if (nameWords.some(word => word === queryLower)) {
+        score = 50000 * marketCapMultiplier;
+      }
+      
+      // Check for word contains (substring matches)
+      else if (nameWords.some(word => word.includes(queryLower))) {
+        score = 40000 * marketCapMultiplier;
+      }
+      
+      // Symbol contains query
+      else if (symbol.includes(queryLower)) {
+        score = 30000 * marketCapMultiplier;
+      }
+      
+      // Fuzzy matching for common abbreviations and misspellings
+      else {
+        // Handle common company type abbreviations
+        const companyTypeMap: Record<string, string[]> = {
+          'corp': ['corporation', 'corp.', 'inc', 'incorporated'],
+          'tech': ['technology', 'technologies'],
+          'sys': ['systems', 'system'],
+          'group': ['grp', 'group'],
+          'company': ['co', 'co.', 'company'],
+        };
+        
+        let fuzzyScore = 0;
+        const fullText = `${symbol} ${name}`;
+        
+        // Check for abbreviation matches
+        Object.entries(companyTypeMap).forEach(([short, variations]) => {
+          if (queryLower.includes(short) || variations.some(v => queryLower.includes(v))) {
+            if (variations.some(v => fullText.includes(v)) || fullText.includes(short)) {
+              fuzzyScore += 5000;
+            }
+          }
+        });
+        
+        // General substring match with penalty for length
+        if (fullText.includes(queryLower)) {
+          fuzzyScore += Math.max(1000, 10000 - queryLower.length * 100);
+        }
+        
+        score = fuzzyScore * marketCapMultiplier;
+      }
     }
     
-    // Symbol contains query
-    else if (symbol.includes(queryLower)) {
-      score += 4000 + marketCapWeight * 0.5;
+    // Additional bonuses
+    
+    // Length proximity bonus (favor shorter, more precise matches)
+    if (score > 0) {
+      const queryLength = queryLower.length;
+      const symbolLength = symbol.length;
+      const nameLength = name.length;
+      
+      // Bonus for query length matching symbol length (indicates ticker search)
+      if (queryLength <= 5 && Math.abs(queryLength - symbolLength) <= 1) {
+        score *= 1.2;
+      }
+      
+      // Penalty for very long company names when query is short
+      if (queryLength <= 4 && nameLength > 20) {
+        score *= 0.8;
+      }
     }
     
-    // Company name contains query
-    else if (name.includes(queryLower)) {
-      score += 3000 + marketCapWeight * 0.5;
-    }
-    
-    // Partial word matches with higher weight for larger companies
-    const partialMatches = nameWords.filter(word => 
-      word.includes(queryLower) && word !== queryLower
-    ).length;
-    score += partialMatches * (500 + marketCapWeight * 0.2);
-    
-    // Extra boost for very large companies (market cap > 100B)
-    if (marketCap > 100000000000) {
-      score += 1000;
+    // Exchange preference (NASDAQ/NYSE over OTC)
+    if (score > 0 && (stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE')) {
+      score *= 1.1;
     }
     
     return Math.max(score, 0);
