@@ -18,16 +18,17 @@ const TopMovers = () => {
 
   const fetchTopMovers = async () => {
     try {
-      // Get the actual top movers from the top 200 stocks by market cap
-      // Using last_return_1d for daily percentage change
+      // Get major stocks to check for real-time movements
       const { data: stocks, error: stocksError } = await supabase
         .from('stocks')
-        .select('symbol, name, last_return_1d, market_cap')
-        .not('last_return_1d', 'is', null)
-        .not('market_cap', 'is', null)
-        .gte('market_cap', 1000000000) // At least 1B market cap
-        .order('market_cap', { ascending: false })
-        .limit(200);
+        .select('symbol, name')
+        .in('symbol', [
+          'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX',
+          'BABA', 'V', 'JPM', 'JNJ', 'WMT', 'PG', 'UNH', 'HD', 'MA', 'DIS',
+          'ADBE', 'PYPL', 'VZ', 'KO', 'NKE', 'MRK', 'PFE', 'T', 'INTC',
+          'CSCO', 'XOM', 'ABT', 'TMO', 'CRM', 'ACN', 'COST', 'AVGO', 'QCOM'
+        ])
+        .limit(40);
 
       if (stocksError) {
         console.error('Error fetching stocks:', stocksError);
@@ -35,29 +36,45 @@ const TopMovers = () => {
       }
 
       if (stocks && stocks.length > 0) {
-        // Sort by absolute percentage change to get the biggest movers (even small ones)
-        const topMovers = stocks
-          .filter(stock => stock.last_return_1d !== null)
-          .sort((a, b) => Math.abs(b.last_return_1d) - Math.abs(a.last_return_1d))
-          .slice(0, 3)
-          .map(stock => ({
-            symbol: stock.symbol,
-            name: stock.name,
-            price: 0, // We'll show percentage only since we don't have current prices
-            change: 0, // We'll calculate this from percentage if needed
-            changePercent: stock.last_return_1d * 100 // Convert from decimal to percentage
-          }));
+        // Get real-time prices for these stocks
+        const symbols = stocks.map(stock => stock.symbol);
+        console.log('Fetching prices for top movers from:', symbols);
+        
+        const { data: priceData, error: priceError } = await supabase.functions.invoke('get-stock-prices', {
+          body: { symbols }
+        });
 
-        console.log('Top movers found:', topMovers);
-        setMovers(topMovers);
-      } else {
-        console.log('No stocks found with movement data');
-        // Fallback if no data
-        setMovers([]);
+        if (priceError) {
+          console.error('Error fetching prices:', priceError);
+          throw priceError;
+        }
+
+        if (priceData && priceData.length > 0) {
+          // Find the actual top movers based on real-time percentage changes
+          const moversData = priceData
+            .map((price: any) => {
+              const stock = stocks.find(s => s.symbol === price.symbol);
+              return stock ? {
+                symbol: price.symbol,
+                name: stock.name,
+                price: price.price,
+                change: price.change,
+                changePercent: price.changePercent
+              } : null;
+            })
+            .filter((mover: any) => mover !== null && mover.price > 0)
+            .sort((a: any, b: any) => Math.abs(b.changePercent) - Math.abs(a.changePercent))
+            .slice(0, 3);
+
+          console.log('Top movers found:', moversData);
+          setMovers(moversData);
+        } else {
+          console.log('No price data returned');
+          setMovers([]);
+        }
       }
     } catch (error) {
       console.error('Error fetching top movers:', error);
-      // Fallback to empty array
       setMovers([]);
     } finally {
       setLoading(false);
@@ -123,8 +140,8 @@ const TopMovers = () => {
                 </div>
                 
                 <div className="flex justify-between items-center">
-                  <div className="text-sm text-muted-foreground">
-                    Daily Move
+                  <div className="font-bold">
+                    ${stock.price.toFixed(2)}
                   </div>
                   <div className={stock.changePercent >= 0 ? "text-primary" : "text-destructive"}>
                     {`${stock.changePercent >= 0 ? "+" : ""}${stock.changePercent.toFixed(2)}%`}
