@@ -18,12 +18,16 @@ const TopMovers = () => {
 
   const fetchTopMovers = async () => {
     try {
-      // Get a sample of popular stocks from your database
+      // Get the actual top movers from the top 200 stocks by market cap
+      // Using last_return_1d for daily percentage change
       const { data: stocks, error: stocksError } = await supabase
         .from('stocks')
-        .select('symbol, name')
-        .in('symbol', ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'TSLA', 'META', 'AMZN', 'NFLX'])
-        .order('market_cap', { ascending: false });
+        .select('symbol, name, last_return_1d, market_cap')
+        .not('last_return_1d', 'is', null)
+        .not('market_cap', 'is', null)
+        .gte('market_cap', 1000000000) // At least 1B market cap
+        .order('market_cap', { ascending: false })
+        .limit(200);
 
       if (stocksError) {
         console.error('Error fetching stocks:', stocksError);
@@ -31,56 +35,30 @@ const TopMovers = () => {
       }
 
       if (stocks && stocks.length > 0) {
-        // Get real-time prices for these stocks
-        const symbols = stocks.map(stock => stock.symbol);
-        console.log('Fetching prices for:', symbols);
-        
-        const { data: priceData, error: priceError } = await supabase.functions.invoke('get-stock-prices', {
-          body: { symbols }
-        });
-
-        if (priceError) {
-          console.error('Error fetching prices:', priceError);
-          throw priceError;
-        }
-
-        if (priceData && priceData.length > 0) {
-          const moversData = priceData
-            .map((price: any) => {
-              const stock = stocks.find(s => s.symbol === price.symbol);
-              return stock ? {
-                symbol: price.symbol,
-                name: stock.name,
-                price: price.price,
-                change: price.change,
-                changePercent: price.changePercent
-              } : null;
-            })
-            .filter((mover: any) => mover !== null && mover.price > 0)
-            .sort((a: any, b: any) => Math.abs(b.changePercent) - Math.abs(a.changePercent))
-            .slice(0, 3);
-
-          setMovers(moversData);
-        } else {
-          console.log('No price data returned, using fallback');
-          // Fallback to some basic stock info if API fails
-          setMovers(stocks.slice(0, 3).map(stock => ({
+        // Sort by absolute percentage change to get the biggest movers
+        const topMovers = stocks
+          .filter(stock => stock.last_return_1d !== null && Math.abs(stock.last_return_1d) > 0.01) // At least 1% move
+          .sort((a, b) => Math.abs(b.last_return_1d) - Math.abs(a.last_return_1d))
+          .slice(0, 3)
+          .map(stock => ({
             symbol: stock.symbol,
             name: stock.name,
-            price: 0,
-            change: 0,
-            changePercent: 0
-          })));
-        }
+            price: 0, // We'll show percentage only since we don't have current prices
+            change: 0, // We'll calculate this from percentage if needed
+            changePercent: stock.last_return_1d * 100 // Convert from decimal to percentage
+          }));
+
+        console.log('Top movers found:', topMovers);
+        setMovers(topMovers);
+      } else {
+        console.log('No stocks found with movement data');
+        // Fallback if no data
+        setMovers([]);
       }
     } catch (error) {
       console.error('Error fetching top movers:', error);
-      // Fallback to basic display
-      setMovers([
-        { symbol: 'AAPL', name: 'Apple Inc.', price: 0, change: 0, changePercent: 0 },
-        { symbol: 'MSFT', name: 'Microsoft Corporation', price: 0, change: 0, changePercent: 0 },
-        { symbol: 'GOOGL', name: 'Alphabet Inc.', price: 0, change: 0, changePercent: 0 }
-      ]);
+      // Fallback to empty array
+      setMovers([]);
     } finally {
       setLoading(false);
     }
@@ -118,43 +96,45 @@ const TopMovers = () => {
   return (
     <section>
       <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {movers.map((stock) => {
-          const positive = stock.change >= 0;
-          return (
-            <div 
-              key={stock.symbol} 
-              className="bg-card p-4 rounded-lg hover:bg-muted/30 transition-colors cursor-pointer"
-              onClick={() => navigate(`/stock/${stock.symbol}`)}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                  <span className="text-sm font-bold">{stock.symbol.charAt(0)}</span>
+      {movers.length === 0 ? (
+        <div className="bg-card p-8 rounded-lg text-center">
+          <p className="text-muted-foreground">No significant movers found in today's market</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {movers.map((stock) => {
+            const positive = stock.change >= 0;
+            return (
+              <div 
+                key={stock.symbol} 
+                className="bg-card p-4 rounded-lg hover:bg-muted/30 transition-colors cursor-pointer"
+                onClick={() => navigate(`/stock/${stock.symbol}`)}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                    <span className="text-sm font-bold">{stock.symbol.charAt(0)}</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold tracking-wide">{stock.symbol}</div>
+                    <div className="text-sm text-muted-foreground truncate max-w-[18ch]" title={stock.name}>
+                      {stock.name}
+                    </div>
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold tracking-wide">{stock.symbol}</div>
-                  <div className="text-sm text-muted-foreground truncate max-w-[18ch]" title={stock.name}>
-                    {stock.name}
+                
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-muted-foreground">
+                    Daily Move
+                  </div>
+                  <div className={stock.changePercent >= 0 ? "text-primary" : "text-destructive"}>
+                    {`${stock.changePercent >= 0 ? "+" : ""}${stock.changePercent.toFixed(2)}%`}
                   </div>
                 </div>
               </div>
-              
-              <div className="flex justify-between items-center">
-                <div className="font-bold">
-                  {stock.price > 0 ? `$${stock.price.toFixed(2)}` : 'Loading...'}
-                </div>
-                <div className={stock.change >= 0 ? "text-primary" : "text-destructive"}>
-                  {stock.price > 0 ? (
-                    `${stock.change >= 0 ? "+" : ""}${stock.changePercent.toFixed(2)}%`
-                  ) : (
-                    'Updating...'
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 };
