@@ -1,5 +1,4 @@
-import { useState, useEffect } from "react";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 interface StockChartProps {
   symbol: string;
@@ -9,115 +8,170 @@ interface StockChartProps {
 interface ChartData {
   time: string;
   price: number;
+  timestamp: number;
   formattedTime: string;
+  formattedDate: string;
+}
+
+interface HoverData {
+  price: number;
+  time: string;
+  date: string;
+  x: number;
 }
 
 const StockChart = ({ symbol, period }: StockChartProps) => {
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hoverData, setHoverData] = useState<HoverData | null>(null);
+  const [isHovering, setIsHovering] = useState(false);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLoading(true);
     
-    // Generate mock data based on period
-    const generateMockData = (period: string) => {
+    const generateRealtimeData = (period: string) => {
       const now = new Date();
       const data: ChartData[] = [];
       let basePrice = 175.43;
       let points = 50;
-      let timeUnit = 'hour';
+      let intervalMinutes = 5; // 5-minute intervals for granular data
       
       switch (period) {
+        case '1H':
+          points = 12; // 12 points for 1 hour (5-min intervals)
+          intervalMinutes = 5;
+          break;
         case '1D':
-          points = 24;
-          timeUnit = 'hour';
+          points = 78; // Trading day ~6.5 hours * 12 (5-min intervals)
+          intervalMinutes = 5;
           break;
         case '1W':
-          points = 7;
-          timeUnit = 'day';
+          points = 35; // 5 trading days, hourly
+          intervalMinutes = 60;
           break;
         case '1M':
-          points = 30;
-          timeUnit = 'day';
+          points = 22; // ~22 trading days
+          intervalMinutes = 60 * 24; // Daily
           break;
         case '3M':
-          points = 90;
-          timeUnit = 'day';
+          points = 66; // ~66 trading days
+          intervalMinutes = 60 * 24;
           break;
         case '1Y':
-          points = 365;
-          timeUnit = 'day';
+          points = 252; // Trading days in a year
+          intervalMinutes = 60 * 24;
           break;
-        case '5Y':
-          points = 1825;
-          timeUnit = 'day';
+        case 'MAX':
+          points = 1260; // 5 years of trading days
+          intervalMinutes = 60 * 24;
           break;
       }
 
+      // Generate more realistic stock movement
+      const volatility = period === '1H' ? 0.3 : period === '1D' ? 0.8 : 1.2;
+      
       for (let i = points; i >= 0; i--) {
         const time = new Date(now);
-        
-        if (timeUnit === 'hour') {
-          time.setHours(time.getHours() - i);
-        } else {
-          time.setDate(time.getDate() - i);
-        }
+        time.setMinutes(time.getMinutes() - (i * intervalMinutes));
 
-        // Generate realistic price movement
-        const randomChange = (Math.random() - 0.5) * 4; // ±2 price change
-        basePrice += randomChange;
-        basePrice = Math.max(basePrice, 150); // Minimum price
-        basePrice = Math.min(basePrice, 200); // Maximum price
+        // More sophisticated price movement
+        const trend = Math.sin(i / 10) * 0.5; // Slight trending
+        const randomWalk = (Math.random() - 0.5) * volatility;
+        const dayOfWeekEffect = time.getDay() === 1 ? 0.2 : 0; // Monday effect
+        
+        basePrice += trend + randomWalk + dayOfWeekEffect;
+        basePrice = Math.max(basePrice, 140);
+        basePrice = Math.min(basePrice, 210);
 
         let formattedTime = '';
-        if (period === '1D') {
+        let formattedDate = '';
+        
+        if (period === '1H') {
           formattedTime = time.toLocaleTimeString('en-US', { 
             hour: 'numeric', 
             minute: '2-digit' 
           });
-        } else if (period === '1W') {
+          formattedDate = time.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric' 
+          });
+        } else if (period === '1D') {
+          formattedTime = time.toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit' 
+          });
+          formattedDate = 'Today';
+        } else if (period === '1W' || period === '1M') {
           formattedTime = time.toLocaleDateString('en-US', { 
-            weekday: 'short' 
+            month: 'short', 
+            day: 'numeric' 
+          });
+          formattedDate = time.toLocaleDateString('en-US', { 
+            weekday: 'short',
+            month: 'short', 
+            day: 'numeric' 
           });
         } else {
           formattedTime = time.toLocaleDateString('en-US', { 
             month: 'short', 
-            day: 'numeric' 
+            year: '2-digit' 
+          });
+          formattedDate = time.toLocaleDateString('en-US', { 
+            month: 'long', 
+            year: 'numeric' 
           });
         }
 
         data.push({
           time: time.toISOString(),
           price: parseFloat(basePrice.toFixed(2)),
-          formattedTime
+          timestamp: time.getTime(),
+          formattedTime,
+          formattedDate
         });
       }
 
       return data;
     };
 
-    const mockData = generateMockData(period);
+    const mockData = generateRealtimeData(period);
     
     setTimeout(() => {
       setChartData(mockData);
       setLoading(false);
-    }, 300);
+    }, 150);
   }, [symbol, period]);
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
-          <p className="text-sm text-muted-foreground">{data.formattedTime}</p>
-          <p className="font-semibold">
-            ${payload[0].value.toFixed(2)}
-          </p>
-        </div>
-      );
+  const handleMouseMove = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current || chartData.length === 0) return;
+
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const width = rect.width - 80; // Account for padding
+    const padding = 40;
+    
+    // Calculate which data point we're closest to
+    const dataIndex = Math.round(((x - padding) / width) * (chartData.length - 1));
+    const clampedIndex = Math.max(0, Math.min(dataIndex, chartData.length - 1));
+    
+    const dataPoint = chartData[clampedIndex];
+    if (dataPoint) {
+      setHoverData({
+        price: dataPoint.price,
+        time: dataPoint.formattedTime,
+        date: dataPoint.formattedDate,
+        x: padding + (clampedIndex / (chartData.length - 1)) * width
+      });
+      setIsHovering(true);
     }
-    return null;
-  };
+  }, [chartData]);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+    setHoverData(null);
+  }, []);
 
   if (loading) {
     return (
@@ -127,53 +181,118 @@ const StockChart = ({ symbol, period }: StockChartProps) => {
     );
   }
 
+  if (chartData.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-muted-foreground">No data available</div>
+      </div>
+    );
+  }
+
+  // Calculate chart dimensions and scaling
+  const minPrice = Math.min(...chartData.map(d => d.price));
+  const maxPrice = Math.max(...chartData.map(d => d.price));
+  const priceRange = maxPrice - minPrice;
+  const padding = 40;
+  const chartWidth = 800;
+  const chartHeight = 300;
+
   // Determine if stock is up or down overall
   const firstPrice = chartData[0]?.price || 0;
   const lastPrice = chartData[chartData.length - 1]?.price || 0;
   const isUp = lastPrice >= firstPrice;
+  const strokeColor = isUp ? 'hsl(142 71% 60%)' : 'hsl(0 72% 60%)';
+
+  // Create SVG path
+  const pathData = chartData.map((point, index) => {
+    const x = padding + (index / (chartData.length - 1)) * (chartWidth - padding * 2);
+    const y = chartHeight - padding - ((point.price - minPrice) / priceRange) * (chartHeight - padding * 2);
+    return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+  }).join(' ');
 
   return (
-    <div className="h-full w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart
-          data={chartData}
-          margin={{
-            top: 5,
-            right: 30,
-            left: 20,
-            bottom: 5,
-          }}
-        >
-          <XAxis 
-            dataKey="formattedTime"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
-            interval="preserveStartEnd"
-          />
-          <YAxis 
-            domain={['dataMin - 1', 'dataMax + 1']}
-            axisLine={false}
-            tickLine={false}
-            tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
-            width={60}
-          />
-          <Tooltip content={<CustomTooltip />} />
-          <Line
-            type="monotone"
-            dataKey="price"
-            stroke={isUp ? 'hsl(142 71% 60%)' : 'hsl(0 72% 60%)'}
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ 
-              r: 4, 
-              fill: isUp ? 'hsl(142 71% 60%)' : 'hsl(0 72% 60%)',
-              stroke: 'hsl(var(--background))',
-              strokeWidth: 2
-            }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+    <div ref={containerRef} className="h-full w-full relative">
+      {/* Price Display */}
+      <div className="absolute top-0 left-0 z-10 mb-4">
+        <div className="text-2xl font-bold">
+          ${(hoverData?.price || lastPrice).toFixed(2)}
+        </div>
+        {hoverData && (
+          <div className="text-sm text-muted-foreground">
+            {hoverData.time} • {hoverData.date}
+          </div>
+        )}
+        {!hoverData && (
+          <div className="text-sm text-muted-foreground">
+            Latest • {chartData[chartData.length - 1]?.formattedDate}
+          </div>
+        )}
+      </div>
+
+      <svg
+        ref={svgRef}
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+        className="overflow-visible cursor-crosshair"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+      >
+        {/* Chart Line */}
+        <path
+          d={pathData}
+          stroke={strokeColor}
+          strokeWidth="2"
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="transition-colors duration-200"
+        />
+
+        {/* Hover Elements */}
+        {isHovering && hoverData && (
+          <>
+            {/* Vertical Line */}
+            <line
+              x1={hoverData.x}
+              y1={padding}
+              x2={hoverData.x}
+              y2={chartHeight - padding}
+              stroke="hsl(var(--muted-foreground))"
+              strokeWidth="1"
+              strokeDasharray="2,2"
+              opacity="0.6"
+            />
+            
+            {/* Hover Dot */}
+            <circle
+              cx={hoverData.x}
+              cy={chartHeight - padding - ((hoverData.price - minPrice) / priceRange) * (chartHeight - padding * 2)}
+              r="4"
+              fill={strokeColor}
+              stroke="hsl(var(--background))"
+              strokeWidth="2"
+            />
+          </>
+        )}
+
+        {/* X-axis (minimal) */}
+        <line
+          x1={padding}
+          y1={chartHeight - padding}
+          x2={chartWidth - padding}
+          y2={chartHeight - padding}
+          stroke="hsl(var(--border))"
+          strokeWidth="1"
+          opacity="0.3"
+        />
+      </svg>
+
+      {/* Period Labels (minimal) */}
+      <div className="absolute bottom-2 left-10 right-10 flex justify-between text-xs text-muted-foreground">
+        <span>{chartData[0]?.formattedTime}</span>
+        <span>{chartData[chartData.length - 1]?.formattedTime}</span>
+      </div>
     </div>
   );
 };

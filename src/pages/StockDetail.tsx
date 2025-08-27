@@ -33,7 +33,7 @@ const StockDetail = () => {
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState("1D");
 
-  const periods = ["1D", "1W", "1M", "3M", "1Y", "5Y"];
+  const periods = ["1H", "1D", "1W", "1M", "3M", "1Y", "MAX"];
 
   useEffect(() => {
     if (!symbol) return;
