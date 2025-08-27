@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,8 @@ interface SearchResult {
   symbol: string;
   name: string;
   exchange: string;
+  market_cap?: number;
+  score?: number;
 }
 
 const StockSearch = () => {
@@ -16,7 +18,55 @@ const StockSearch = () => {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Real search function using Supabase
+  // Smart ranking function similar to Robinhood
+  const calculateSearchScore = (stock: any, query: string): number => {
+    const symbol = stock.symbol.toLowerCase();
+    const name = stock.name.toLowerCase();
+    const marketCapWeight = Math.log(Math.max(stock.market_cap || 1000000, 1000000)) / 100;
+    
+    let score = 0;
+    
+    // Exact symbol match (highest priority)
+    if (symbol === query) score += 1000;
+    
+    // Symbol starts with query (very high priority)
+    else if (symbol.startsWith(query)) score += 800;
+    
+    // Company name starts with query (high priority)
+    else if (name.startsWith(query)) score += 600;
+    
+    // Symbol contains query
+    else if (symbol.includes(query)) score += 400;
+    
+    // Company name contains query
+    else if (name.includes(query)) score += 200;
+    
+    // Partial word matches in company name
+    const nameWords = name.split(' ');
+    const matchingWords = nameWords.filter(word => 
+      word.startsWith(query) || word.includes(query)
+    ).length;
+    score += matchingWords * 100;
+    
+    // Add market cap weighting as tiebreaker
+    score += marketCapWeight;
+    
+    return score;
+  };
+
+  // Debounced search function
+  const debouncedSearch = useCallback(
+    (() => {
+      let timeoutId: NodeJS.Timeout;
+      return (query: string) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => handleSearch(query), 150);
+      };
+    })(),
+    []
+  );
+
+  // Enhanced search function with smart ranking
   const handleSearch = async (query: string) => {
     if (!query.trim()) {
       setResults([]);
@@ -26,15 +76,25 @@ const StockSearch = () => {
     setIsSearching(true);
 
     try {
+      // Fetch a broader set of results for better ranking
       const { data: stocks, error } = await supabase
         .from('stocks')
-        .select('symbol, name, exchange')
+        .select('symbol, name, exchange, market_cap')
         .or(`symbol.ilike.%${query}%,name.ilike.%${query}%`)
-        .limit(10);
+        .limit(50); // Get more results to rank properly
 
       if (error) throw error;
 
-      setResults(stocks || []);
+      // Apply smart ranking algorithm
+      const rankedResults = (stocks || [])
+        .map(stock => ({
+          ...stock,
+          score: calculateSearchScore(stock, query.toLowerCase())
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8); // Show top 8 results
+
+      setResults(rankedResults);
     } catch (error) {
       console.error('Error searching stocks:', error);
       setResults([]);
@@ -54,7 +114,7 @@ const StockSearch = () => {
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
-            handleSearch(e.target.value);
+            debouncedSearch(e.target.value);
           }}
           className="pl-10 bg-card"
         />
