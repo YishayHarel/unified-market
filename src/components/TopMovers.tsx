@@ -35,9 +35,9 @@ const TopMovers = () => {
       }
 
       if (stocks && stocks.length > 0) {
-        // Sort by absolute percentage change to get the biggest movers
+        // Sort by absolute percentage change to get the biggest movers (even small ones)
         const topMovers = stocks
-          .filter(stock => stock.last_return_1d !== null && Math.abs(stock.last_return_1d) > 0.01) // At least 1% move
+          .filter(stock => stock.last_return_1d !== null)
           .sort((a, b) => Math.abs(b.last_return_1d) - Math.abs(a.last_return_1d))
           .slice(0, 3)
           .map(stock => ({
