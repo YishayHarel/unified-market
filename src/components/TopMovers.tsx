@@ -25,18 +25,26 @@ const TopMovers = () => {
         .in('symbol', ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'TSLA', 'META', 'AMZN', 'NFLX'])
         .order('market_cap', { ascending: false });
 
-      if (stocksError) throw stocksError;
+      if (stocksError) {
+        console.error('Error fetching stocks:', stocksError);
+        throw stocksError;
+      }
 
       if (stocks && stocks.length > 0) {
         // Get real-time prices for these stocks
         const symbols = stocks.map(stock => stock.symbol);
+        console.log('Fetching prices for:', symbols);
+        
         const { data: priceData, error: priceError } = await supabase.functions.invoke('get-stock-prices', {
           body: { symbols }
         });
 
-        if (priceError) throw priceError;
+        if (priceError) {
+          console.error('Error fetching prices:', priceError);
+          throw priceError;
+        }
 
-        if (priceData) {
+        if (priceData && priceData.length > 0) {
           const moversData = priceData
             .map((price: any) => {
               const stock = stocks.find(s => s.symbol === price.symbol);
@@ -52,10 +60,26 @@ const TopMovers = () => {
             .sort((a: any, b: any) => Math.abs(b.changePercent) - Math.abs(a.changePercent));
 
           setMovers(moversData);
+        } else {
+          console.log('No price data returned, using fallback');
+          // Fallback to some basic stock info if API fails
+          setMovers(stocks.slice(0, 3).map(stock => ({
+            symbol: stock.symbol,
+            name: stock.name,
+            price: 0,
+            change: 0,
+            changePercent: 0
+          })));
         }
       }
     } catch (error) {
       console.error('Error fetching top movers:', error);
+      // Fallback to basic display
+      setMovers([
+        { symbol: 'AAPL', name: 'Apple Inc.', price: 0, change: 0, changePercent: 0 },
+        { symbol: 'MSFT', name: 'Microsoft Corporation', price: 0, change: 0, changePercent: 0 },
+        { symbol: 'GOOGL', name: 'Alphabet Inc.', price: 0, change: 0, changePercent: 0 }
+      ]);
     } finally {
       setLoading(false);
     }
@@ -115,9 +139,15 @@ const TopMovers = () => {
               </div>
               
               <div className="flex justify-between items-center">
-                <div className="font-bold">${stock.price.toFixed(2)}</div>
-                <div className={positive ? "text-green-400" : "text-red-400"}>
-                  {positive ? "+" : ""}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+                <div className="font-bold">
+                  {stock.price > 0 ? `$${stock.price.toFixed(2)}` : 'Loading...'}
+                </div>
+                <div className={stock.change >= 0 ? "text-green-400" : "text-red-400"}>
+                  {stock.price > 0 ? (
+                    `${stock.change >= 0 ? "+" : ""}${stock.changePercent.toFixed(2)}%`
+                  ) : (
+                    'Updating...'
+                  )}
                 </div>
               </div>
             </div>
