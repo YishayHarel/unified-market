@@ -80,21 +80,145 @@ const EarningsCalendar = () => {
       }
 
       try {
-        // Resolve query to a ticker using the stocks table
+        const query = searchQuery.trim().toLowerCase();
+        
+        // Check if the search query is a date (various formats)
+        const dateMatch = query.match(/^\d{4}-\d{2}-\d{2}$/) || 
+                         query.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/) ||
+                         query.match(/^\d{1,2}-\d{1,2}-\d{4}$/) ||
+                         query.match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{1,2}$/i);
+        
+        if (dateMatch) {
+          // Parse the date and filter existing earnings
+          let searchDate: Date;
+          
+          if (query.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            searchDate = new Date(query + 'T00:00:00');
+          } else if (query.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+            searchDate = new Date(query);
+          } else if (query.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+            const [month, day, year] = query.split('-');
+            searchDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+          } else {
+            // Handle "jan 15", "february 28", etc.
+            const currentYear = new Date().getFullYear();
+            searchDate = new Date(`${query} ${currentYear}`);
+          }
+          
+          const searchDateStr = searchDate.toISOString().split('T')[0];
+          const dateFiltered = earnings.filter(earning => earning.date === searchDateStr);
+          setFilteredEarnings(dateFiltered);
+          return;
+        }
+
+        // Define common major stocks that users might search for
+        const majorStockMap: Record<string, string> = {
+          'apple': 'AAPL',
+          'microsoft': 'MSFT', 
+          'nvidia': 'NVDA',
+          'google': 'GOOGL',
+          'alphabet': 'GOOGL',
+          'amazon': 'AMZN',
+          'tesla': 'TSLA',
+          'meta': 'META',
+          'facebook': 'META',
+          'netflix': 'NFLX',
+          'disney': 'DIS',
+          'boeing': 'BA',
+          'walmart': 'WMT',
+          'jpmorgan': 'JPM',
+          'visa': 'V',
+          'mastercard': 'MA',
+          'coca cola': 'KO',
+          'pepsi': 'PEP',
+          'procter': 'PG',
+          'johnson': 'JNJ',
+          'pfizer': 'PFE',
+          'intel': 'INTC',
+          'amd': 'AMD',
+          'salesforce': 'CRM',
+          'oracle': 'ORCL',
+          'adobe': 'ADBE',
+          'ibm': 'IBM',
+          'cisco': 'CSCO',
+          'mcdonald': 'MCD',
+          'starbucks': 'SBUX',
+          'home depot': 'HD',
+          'target': 'TGT',
+          'costco': 'COST',
+          'uber': 'UBER',
+          'lyft': 'LYFT',
+          'airbnb': 'ABNB',
+          'paypal': 'PYPL',
+          'square': 'SQ',
+          'zoom': 'ZM',
+          'slack': 'WORK',
+          'spotify': 'SPOT',
+          'twitter': 'TWTR',
+          'snap': 'SNAP',
+          'pinterest': 'PINS',
+          'roku': 'ROKU',
+          'peloton': 'PTON',
+          'robinhood': 'HOOD',
+          'coinbase': 'COIN',
+          'palantir': 'PLTR',
+          'snowflake': 'SNOW',
+          'databricks': 'DBRX',
+        };
+
+        // Check if the query matches a major stock
+        let targetSymbol = null;
+        
+        // Direct symbol match (e.g., "AAPL")
+        if (query.match(/^[A-Z]{1,5}$/i)) {
+          targetSymbol = query.toUpperCase();
+        }
+        // Company name match
+        else {
+          for (const [name, symbol] of Object.entries(majorStockMap)) {
+            if (name.includes(query) || query.includes(name)) {
+              targetSymbol = symbol;
+              break;
+            }
+          }
+        }
+
+        // If we found a known symbol, search directly
+        if (targetSymbol) {
+          const today = new Date();
+          const horizon = new Date();
+          horizon.setDate(today.getDate() + 120);
+
+          const { data, error: fnError } = await supabase.functions.invoke('get-earnings', {
+            body: {
+              from: today.toISOString().split('T')[0],
+              to: horizon.toISOString().split('T')[0],
+              symbol: targetSymbol
+            }
+          });
+
+          if (fnError) throw fnError;
+          setFilteredEarnings((data as any)?.earningsCalendar || []);
+          return;
+        }
+
+        // Fallback to database search for less common stocks
         const { data: stockMatches, error: searchError } = await supabase
           .from('stocks')
           .select('symbol, name, market_cap')
-          .or(`symbol.ilike.%${searchQuery}%,name.ilike.%${searchQuery}%`)
+          .or(`symbol.ilike.%${query}%,name.ilike.%${query}%`)
+          .not('market_cap', 'is', null) // Prioritize stocks with market cap data
           .order('market_cap', { ascending: false })
-          .limit(1);
+          .limit(5);
 
         if (searchError) throw searchError;
 
         if (stockMatches && stockMatches.length > 0) {
+          // Use the best match (highest market cap)
           const symbol = stockMatches[0].symbol;
           const today = new Date();
           const horizon = new Date();
-          horizon.setDate(today.getDate() + 120); // next ~quarter
+          horizon.setDate(today.getDate() + 120);
 
           const { data, error: fnError } = await supabase.functions.invoke('get-earnings', {
             body: {
@@ -105,9 +229,9 @@ const EarningsCalendar = () => {
           });
 
           if (fnError) throw fnError;
-
           setFilteredEarnings((data as any)?.earningsCalendar || []);
         } else {
+          // No matches found
           setFilteredEarnings([]);
         }
       } catch (err) {
@@ -116,7 +240,8 @@ const EarningsCalendar = () => {
       }
     };
 
-    run();
+    const debounceTimer = setTimeout(run, 300); // Debounce search
+    return () => clearTimeout(debounceTimer);
   }, [searchQuery, displayCount, earnings]);
 
   if (loading) {
@@ -198,17 +323,53 @@ const EarningsCalendar = () => {
       <div className="relative mb-6">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search by company symbol or name..."
+          placeholder="Search by company (e.g. Apple, NVDA) or date (e.g. 2025-01-15, Jan 15)..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-10 bg-card"
         />
       </div>
 
+      {/* Search Examples */}
+      {searchQuery.length === 0 && (
+        <div className="mb-4 text-xs text-muted-foreground flex flex-wrap gap-2">
+          <span>Try searching:</span>
+          <button 
+            onClick={() => setSearchQuery('Apple')}
+            className="bg-muted px-2 py-1 rounded hover:bg-muted/80"
+          >
+            Apple
+          </button>
+          <button 
+            onClick={() => setSearchQuery('NVDA')}
+            className="bg-muted px-2 py-1 rounded hover:bg-muted/80"
+          >
+            NVDA
+          </button>
+          <button 
+            onClick={() => setSearchQuery('2025-01-15')}
+            className="bg-muted px-2 py-1 rounded hover:bg-muted/80"
+          >
+            2025-01-15
+          </button>
+          <button 
+            onClick={() => setSearchQuery('Jan 15')}
+            className="bg-muted px-2 py-1 rounded hover:bg-muted/80"
+          >
+            Jan 15
+          </button>
+        </div>
+      )}
+
       {/* Results Summary */}
       <div className="mb-4 text-sm text-muted-foreground">
-        Showing {filteredEarnings.length} upcoming earnings
-        {searchQuery && ` for "${searchQuery}"`}
+        {searchQuery ? (
+          searchQuery.match(/^\d{4}-\d{2}-\d{2}$/) || searchQuery.match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i) ? 
+            `Showing ${filteredEarnings.length} earnings for ${searchQuery}` :
+            `Showing ${filteredEarnings.length} earnings for "${searchQuery}"`
+        ) : (
+          `Showing ${filteredEarnings.length} upcoming earnings`
+        )}
       </div>
 
       {/* Earnings by Date */}
