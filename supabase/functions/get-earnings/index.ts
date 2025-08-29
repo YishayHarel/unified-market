@@ -31,9 +31,20 @@ serve(async (req) => {
     if (to) params.append('to', to)
     if (symbol) params.append('symbol', symbol)
 
+    // Add timeout to prevent edge function timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+    
     const response = await fetch(
-      `https://finnhub.io/api/v1/calendar/earnings?${params.toString()}`
+      `https://finnhub.io/api/v1/calendar/earnings?${params.toString()}`,
+      { 
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'UnifiedMarket/1.0'
+        }
+      }
     )
+    clearTimeout(timeoutId)
 
     if (!response.ok) {
       throw new Error(`Finnhub API error: ${response.status}`)

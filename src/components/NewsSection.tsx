@@ -24,9 +24,16 @@ const NewsSection = () => {
 
   const fetchNews = async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('get-news', {
+      // Add timeout handling for the client-side call
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 15000)
+      );
+      
+      const fetchPromise = supabase.functions.invoke('get-news', {
         body: { category: 'business', country: 'us', pageSize: 50 }
       });
+      
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
       if (error) throw error;
       
@@ -35,6 +42,14 @@ const NewsSection = () => {
       }
     } catch (error) {
       console.error('Error fetching news:', error);
+      // Set fallback news data instead of empty array
+      setNews([{
+        title: "Market Update",
+        description: "Unable to fetch latest news. Please try refreshing the page.",
+        source: { name: "System" },
+        publishedAt: new Date().toISOString(),
+        url: "#"
+      }]);
     } finally {
       setLoading(false);
     }

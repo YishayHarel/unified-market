@@ -33,7 +33,17 @@ serve(async (req) => {
     const url = `https://newsapi.org/v2/top-headlines?category=${category}&country=${country}&pageSize=${pageSize}&apiKey=${newsApiKey}`
     console.log('Calling News API...')
     
-    const response = await fetch(url)
+    // Add timeout to prevent edge function timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+    
+    const response = await fetch(url, { 
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'UnifiedMarket/1.0'
+      }
+    })
+    clearTimeout(timeoutId)
     console.log(`News API response status: ${response.status}`)
 
     if (!response.ok) {

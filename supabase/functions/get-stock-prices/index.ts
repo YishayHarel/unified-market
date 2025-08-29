@@ -34,13 +34,25 @@ serve(async (req) => {
       throw new Error('FINNHUB_API_KEY not found')
     }
 
-    const prices = await Promise.all(
-      symbols.map(async (symbol: string) => {
-        try {
-          console.log(`Fetching data for ${symbol}`)
-          const response = await fetch(
-            `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`
-          )
+    // Use Promise.allSettled with timeout to prevent hanging
+    const promises = symbols.map(async (symbol: string) => {
+      try {
+        console.log(`Fetching data for ${symbol}`)
+        
+        // Add timeout for each individual request
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout per symbol
+        
+        const response = await fetch(
+          `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`,
+          { 
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'UnifiedMarket/1.0'
+            }
+          }
+        )
+        clearTimeout(timeoutId)
           
           if (!response.ok) {
             console.error(`Error fetching ${symbol}: ${response.status}`)
@@ -70,10 +82,13 @@ serve(async (req) => {
           console.error(`Error processing ${symbol}:`, error)
           return null
         }
-      })
-    )
+      }
+    })
 
-    const validPrices = prices.filter(p => p !== null)
+    const results = await Promise.allSettled(promises)
+    const validPrices = results
+      .filter(result => result.status === 'fulfilled' && result.value !== null)
+      .map(result => (result as PromiseFulfilledResult<any>).value)
     console.log(`Returning ${validPrices.length} valid prices out of ${symbols.length} requested`)
     
     return new Response(

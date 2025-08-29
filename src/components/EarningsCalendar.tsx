@@ -26,12 +26,19 @@ const EarningsCalendar = () => {
         const fromDate = today.toISOString().split('T')[0];
         const toDate = nextMonth.toISOString().split('T')[0];
 
-        const { data, error } = await supabase.functions.invoke('get-earnings', {
+        // Add timeout handling for the client-side call
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 15000)
+        );
+        
+        const fetchPromise = supabase.functions.invoke('get-earnings', {
           body: { 
             from: fromDate,
             to: toDate
           }
         });
+        
+        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
         if (error) throw error;
 
