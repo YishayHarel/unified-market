@@ -1,36 +1,52 @@
 import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+
+interface EarningsData {
+  symbol: string;
+  date: string;
+  epsEstimate: number;
+  epsActual?: number;
+  hour: string;
+  quarter: number;
+  year: number;
+}
 
 const EarningsCalendar = () => {
   const [loading, setLoading] = useState(true);
-  const [mockEarnings] = useState([
-    {
-      symbol: "AAPL",
-      company: "Apple Inc.",
-      date: "Jan 17",
-      expected: "2.18",
-      previous: "1.88"
-    },
-    {
-      symbol: "GOOGL", 
-      company: "Alphabet Inc.",
-      date: "Jan 18",
-      expected: "1.35",
-      previous: "1.05"
-    },
-    {
-      symbol: "TSLA",
-      company: "Tesla Inc.", 
-      date: "Jan 19",
-      expected: "0.86",
-      previous: "0.71"
-    }
-  ]);
+  const [earnings, setEarnings] = useState<EarningsData[]>([]);
 
-  // Mock data for demonstration
   useEffect(() => {
-    setTimeout(() => {
-      setLoading(false);
-    }, 1200);
+    const fetchEarnings = async () => {
+      try {
+        // Get earnings for the next 30 days
+        const today = new Date();
+        const nextMonth = new Date(today);
+        nextMonth.setDate(today.getDate() + 30);
+
+        const fromDate = today.toISOString().split('T')[0];
+        const toDate = nextMonth.toISOString().split('T')[0];
+
+        const { data, error } = await supabase.functions.invoke('get-earnings', {
+          body: { 
+            from: fromDate,
+            to: toDate
+          }
+        });
+
+        if (error) throw error;
+
+        if (data?.earningsCalendar) {
+          setEarnings(data.earningsCalendar.slice(0, 9)); // Show first 9 results
+        }
+      } catch (error) {
+        console.error('Error fetching earnings:', error);
+        // Keep loading state true to show loading message if API fails
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchEarnings();
   }, []);
 
   if (loading) {
@@ -42,18 +58,36 @@ const EarningsCalendar = () => {
     );
   }
 
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
+  const formatTime = (hour: string) => {
+    switch (hour) {
+      case 'bmo': return 'Before Market Open';
+      case 'amc': return 'After Market Close';
+      case 'dmh': return 'During Market Hours';
+      default: return 'TBD';
+    }
+  };
+
   return (
     <section>
       <h2 className="text-2xl font-semibold mb-4">🗓 Earnings Calendar</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {mockEarnings.map((earning) => (
-          <div key={earning.symbol} className="bg-card p-4 rounded-lg">
+        {earnings.map((earning, index) => (
+          <div key={`${earning.symbol}-${index}`} className="bg-card p-4 rounded-lg">
             <h3 className="font-semibold mb-2">
-              {earning.company} ({earning.symbol})
+              {earning.symbol}
             </h3>
-            <p className="text-sm mb-1">Date: {earning.date}</p>
-            <p className="text-sm mb-1">Estimate: ${earning.expected}</p>
-            <p className="text-sm">Previous: ${earning.previous}</p>
+            <p className="text-sm mb-1">Date: {formatDate(earning.date)}</p>
+            <p className="text-sm mb-1">EPS Estimate: ${earning.epsEstimate?.toFixed(2) || 'N/A'}</p>
+            <p className="text-sm mb-1">Time: {formatTime(earning.hour)}</p>
+            <p className="text-sm">Q{earning.quarter} {earning.year}</p>
           </div>
         ))}
       </div>
