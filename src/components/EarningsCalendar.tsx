@@ -71,18 +71,53 @@ const EarningsCalendar = () => {
     fetchEarnings();
   }, [displayCount]);
 
-  // Filter earnings based on search query
+  // Filter or fetch earnings based on search query
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredEarnings(earnings.slice(0, displayCount));
-    } else {
-      const filtered = earnings.filter(earning => 
-        earning.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        earning.company_name?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredEarnings(filtered.slice(0, displayCount));
-    }
-  }, [searchQuery, earnings, displayCount]);
+    const run = async () => {
+      if (!searchQuery.trim()) {
+        setFilteredEarnings(earnings.slice(0, displayCount));
+        return;
+      }
+
+      try {
+        // Resolve query to a ticker using the stocks table
+        const { data: stockMatches, error: searchError } = await supabase
+          .from('stocks')
+          .select('symbol, name, market_cap')
+          .or(`symbol.ilike.%${searchQuery}%,name.ilike.%${searchQuery}%`)
+          .order('market_cap', { ascending: false })
+          .limit(1);
+
+        if (searchError) throw searchError;
+
+        if (stockMatches && stockMatches.length > 0) {
+          const symbol = stockMatches[0].symbol;
+          const today = new Date();
+          const horizon = new Date();
+          horizon.setDate(today.getDate() + 120); // next ~quarter
+
+          const { data, error: fnError } = await supabase.functions.invoke('get-earnings', {
+            body: {
+              from: today.toISOString().split('T')[0],
+              to: horizon.toISOString().split('T')[0],
+              symbol
+            }
+          });
+
+          if (fnError) throw fnError;
+
+          setFilteredEarnings((data as any)?.earningsCalendar || []);
+        } else {
+          setFilteredEarnings([]);
+        }
+      } catch (err) {
+        console.error('Search error:', err);
+        setFilteredEarnings([]);
+      }
+    };
+
+    run();
+  }, [searchQuery, displayCount, earnings]);
 
   if (loading) {
     return (

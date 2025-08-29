@@ -54,6 +54,7 @@ serve(async (req) => {
 
     const data = await response.json()
     console.log(`Received ${data.earningsCalendar?.length || 0} earnings records`)
+    console.log(`Received ${data.earningsCalendar?.length || 0} earnings records`)
     
     // If we have earnings data, enrich it with market cap data
     if (data.earningsCalendar && data.earningsCalendar.length > 0) {
@@ -61,7 +62,7 @@ serve(async (req) => {
       const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
       
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-      const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
       const supabase = createClient(supabaseUrl, supabaseKey)
       
       // Get unique symbols from earnings data
