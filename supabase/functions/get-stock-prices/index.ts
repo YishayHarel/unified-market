@@ -82,8 +82,7 @@ serve(async (req) => {
           console.error(`Error processing ${symbol}:`, error)
           return null
         }
-      }
-    })
+      })
 
     const results = await Promise.allSettled(promises)
     const validPrices = results
