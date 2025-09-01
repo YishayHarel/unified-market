@@ -28,22 +28,10 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
-              <Route path="/earnings" element={
-                <ProtectedRoute>
-                  <Earnings />
-                </ProtectedRoute>
-              } />
-              <Route path="/dividends" element={
-                <ProtectedRoute>
-                  <Dividends />
-                </ProtectedRoute>
-              } />
+              <Route path="/earnings" element={<Earnings />} />
+              <Route path="/dividends" element={<Dividends />} />
               <Route path="/news" element={<News />} />
-              <Route path="/markets" element={
-                <ProtectedRoute>
-                  <Markets />
-                </ProtectedRoute>
-              } />
+              <Route path="/markets" element={<Markets />} />
               <Route path="/stock/:symbol" element={<StockDetail />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
