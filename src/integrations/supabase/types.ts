@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       stocks: {
         Row: {
           avg_volume: number | null
@@ -62,6 +89,72 @@ export type Database = {
           symbol?: string
           trending_score?: number | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      user_dividends: {
+        Row: {
+          company: string
+          created_at: string
+          dividend_per_share: number
+          frequency: number
+          id: string
+          next_pay_date: string | null
+          shares: number
+          symbol: string
+          updated_at: string
+          user_id: string
+          yield_percentage: number | null
+        }
+        Insert: {
+          company: string
+          created_at?: string
+          dividend_per_share?: number
+          frequency?: number
+          id?: string
+          next_pay_date?: string | null
+          shares?: number
+          symbol: string
+          updated_at?: string
+          user_id: string
+          yield_percentage?: number | null
+        }
+        Update: {
+          company?: string
+          created_at?: string
+          dividend_per_share?: number
+          frequency?: number
+          id?: string
+          next_pay_date?: string | null
+          shares?: number
+          symbol?: string
+          updated_at?: string
+          user_id?: string
+          yield_percentage?: number | null
+        }
+        Relationships: []
+      }
+      user_saved_stocks: {
+        Row: {
+          id: string
+          name: string | null
+          saved_at: string
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          name?: string | null
+          saved_at?: string
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          name?: string | null
+          saved_at?: string
+          symbol?: string
+          user_id?: string
         }
         Relationships: []
       }
