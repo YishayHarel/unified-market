@@ -12,6 +12,7 @@ import Earnings from "./pages/Earnings";
 import Dividends from "./pages/Dividends";
 import News from "./pages/News";
 import Markets from "./pages/Markets";
+import YishAI from "./pages/YishAI";
 import NotFound from "./pages/NotFound";
 import BottomNavigation from "./components/BottomNavigation";
 
@@ -32,6 +33,7 @@ const App = () => (
               <Route path="/dividends" element={<Dividends />} />
               <Route path="/news" element={<News />} />
               <Route path="/markets" element={<Markets />} />
+              <Route path="/yishai" element={<YishAI />} />
               <Route path="/stock/:symbol" element={<StockDetail />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

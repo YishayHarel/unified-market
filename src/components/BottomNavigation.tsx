@@ -1,4 +1,4 @@
-import { Home, Calendar, DollarSign, Newspaper, TrendingUp } from "lucide-react";
+import { Home, Calendar, DollarSign, Newspaper, TrendingUp, Bot } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +8,7 @@ const navigationItems = [
   { name: "Dividends", path: "/dividends", icon: DollarSign },
   { name: "News", path: "/news", icon: Newspaper },
   { name: "Markets", path: "/markets", icon: TrendingUp },
+  { name: "YishAI", path: "/yishai", icon: Bot },
 ];
 
 const BottomNavigation = () => {
