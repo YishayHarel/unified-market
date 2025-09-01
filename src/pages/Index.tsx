@@ -5,6 +5,7 @@ import { LogOut, User } from "lucide-react";
 import TopMovers from "@/components/TopMovers";
 import NewsSection from "@/components/NewsSection";
 import StockSearch from "@/components/StockSearch";
+import AIStockAdvisor from "@/components/AIStockAdvisor";
 
 const Index = () => {
   const { user, signOut } = useAuth();
@@ -41,6 +42,9 @@ const Index = () => {
 
       {/* Stock Search */}
       <StockSearch />
+
+      {/* AI Stock Advisor - Premium Feature */}
+      {user && <AIStockAdvisor />}
 
       {/* News */}
       <NewsSection />

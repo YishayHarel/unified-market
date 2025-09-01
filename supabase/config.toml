@@ -1,1 +1,13 @@
 project_id = "bfhdtmxmlcfyxjgracbz"
+
+[functions.get-stock-prices]
+verify_jwt = false
+
+[functions.get-news]
+verify_jwt = false
+
+[functions.get-earnings]
+verify_jwt = false
+
+[functions.ai-stock-advisor]
+verify_jwt = true
