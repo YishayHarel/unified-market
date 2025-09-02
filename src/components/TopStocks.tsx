@@ -21,6 +21,7 @@ export const TopStocks = () => {
   const [stocks, setStocks] = useState<TopStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [displayCount, setDisplayCount] = useState(20);
   const navigate = useNavigate();
 
   const fetchTopStocks = async () => {
@@ -30,7 +31,7 @@ export const TopStocks = () => {
         .select('id, symbol, name, market_cap, rank_score, last_return_1d, last_ranked_at')
         .eq('is_top_100', true)
         .order('rank_score', { ascending: false })
-        .limit(20); // Show top 20 for display
+        .limit(100); // Fetch all top 100
 
       if (error) throw error;
       
@@ -58,6 +59,10 @@ export const TopStocks = () => {
     } finally {
       setUpdating(false);
     }
+  };
+
+  const loadMore = () => {
+    setDisplayCount(prev => Math.min(prev + 20, stocks.length));
   };
 
   useEffect(() => {
@@ -130,7 +135,7 @@ export const TopStocks = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            {stocks.map((stock, index) => (
+            {stocks.slice(0, displayCount).map((stock, index) => (
               <div
                 key={stock.id}
                 className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer"
@@ -183,10 +188,25 @@ export const TopStocks = () => {
               </div>
             ))}
             
+            {displayCount < stocks.length && (
+              <div className="flex justify-center mt-6">
+                <Button 
+                  onClick={loadMore}
+                  variant="outline"
+                  className="w-full max-w-xs"
+                >
+                  Load More ({Math.min(20, stocks.length - displayCount)} of {stocks.length - displayCount} remaining)
+                </Button>
+              </div>
+            )}
+            
             <div className="mt-6 pt-4 border-t">
               <p className="text-xs text-muted-foreground text-center">
                 {stocks[0]?.last_ranked_at && (
                   <>Last updated: {new Date(stocks[0].last_ranked_at).toLocaleDateString()}</>
+                )}
+                {stocks.length > 0 && (
+                  <> • Showing {displayCount} of {stocks.length} stocks</>
                 )}
               </p>
             </div>
