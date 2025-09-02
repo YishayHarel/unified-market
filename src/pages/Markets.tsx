@@ -10,9 +10,9 @@ const Markets = () => {
         <p className="text-muted-foreground mt-2">Market overview and your saved stocks</p>
       </header>
       
-      <TopStocks />
       <UserSavedStocks />
       <TopMovers />
+      <TopStocks />
     </div>
   );
 };
