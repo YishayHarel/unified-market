@@ -6,14 +6,23 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
     console.log('Get-stock-fundamentals function called')
     
-    const { symbol } = await req.json()
+    let requestBody;
+    try {
+      requestBody = await req.json()
+    } catch (e) {
+      console.error('Error parsing request body:', e)
+      throw new Error('Invalid request body')
+    }
+    
+    const { symbol } = requestBody
     if (!symbol) {
       throw new Error('symbol is required')
     }

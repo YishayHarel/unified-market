@@ -56,7 +56,9 @@ const StockDetail = () => {
         }
         
         // Then get real-time price data and fundamentals
-        const [priceResponse, fundamentalsResponse] = await Promise.all([
+        console.log('Fetching data for:', symbol.toUpperCase());
+        
+        const [priceResponse, fundamentalsResponse] = await Promise.allSettled([
           supabase.functions.invoke('get-stock-prices', {
             body: { symbols: [symbol.toUpperCase()] }
           }),
@@ -65,21 +67,35 @@ const StockDetail = () => {
           })
         ]);
         
-        if (priceResponse.error) {
-          console.error('Error fetching price data:', priceResponse.error);
+        console.log('Price response:', priceResponse);
+        console.log('Fundamentals response:', fundamentalsResponse);
+        
+        // Handle price data
+        let priceData = null;
+        if (priceResponse.status === 'fulfilled' && !priceResponse.value.error) {
+          priceData = priceResponse.value.data;
+        } else {
+          console.error('Error fetching price data:', priceResponse);
           toast.error('Failed to load stock price data');
         }
         
-        if (fundamentalsResponse.error) {
-          console.error('Error fetching fundamentals data:', fundamentalsResponse.error);
+        // Handle fundamentals data (don't fail if this doesn't work)
+        let fundamentalsData: any = {};
+        if (fundamentalsResponse.status === 'fulfilled' && !fundamentalsResponse.value.error) {
+          fundamentalsData = fundamentalsResponse.value.data || {};
+        } else {
+          console.error('Error fetching fundamentals data:', fundamentalsResponse);
+          // Don't show error toast for fundamentals as it's nice-to-have
         }
         
         // Combine the data
         let stockData: StockData;
         
-        if (priceResponse.data && priceResponse.data.length > 0) {
-          const price = priceResponse.data[0];
-          const fundamentals = fundamentalsResponse.data || {};
+        if (priceData && priceData.length > 0) {
+          const price = priceData[0];
+          
+          console.log('Using price data:', price);
+          console.log('Using fundamentals data:', fundamentalsData);
           
           stockData = {
             symbol: symbol.toUpperCase(),
@@ -91,15 +107,16 @@ const StockDetail = () => {
             low: price.low || price.price || 0,
             open: price.open || price.price || 0,
             volume: 0, // Would need different API call for volume
-            marketCap: formatMarketCap(fundamentals.marketCapitalization || stockInfo?.market_cap),
-            peRatio: fundamentals.peRatio || 0,
-            dividendYield: fundamentals.dividendYield || 0,  
-            weekHigh52: fundamentals.week52High || 0,
-            weekLow52: fundamentals.week52Low || 0
+            marketCap: formatMarketCap(fundamentalsData.marketCapitalization || stockInfo?.market_cap),
+            peRatio: fundamentalsData.peRatio || 0,
+            dividendYield: fundamentalsData.dividendYield || 0,  
+            weekHigh52: fundamentalsData.week52High || 0,
+            weekLow52: fundamentalsData.week52Low || 0
           };
         } else {
           // Fallback data if API fails
-          const fundamentals = fundamentalsResponse.data || {};
+          console.log('No price data, using fallback with fundamentals:', fundamentalsData);
+          
           stockData = {
             symbol: symbol.toUpperCase(),
             name: stockInfo?.name || getCompanyName(symbol),
@@ -110,11 +127,11 @@ const StockDetail = () => {
             low: 0,
             open: 0,
             volume: 0,
-            marketCap: formatMarketCap(fundamentals.marketCapitalization || stockInfo?.market_cap),
-            peRatio: fundamentals.peRatio || 0,
-            dividendYield: fundamentals.dividendYield || 0,
-            weekHigh52: fundamentals.week52High || 0,
-            weekLow52: fundamentals.week52Low || 0
+            marketCap: formatMarketCap(fundamentalsData.marketCapitalization || stockInfo?.market_cap),
+            peRatio: fundamentalsData.peRatio || 0,
+            dividendYield: fundamentalsData.dividendYield || 0,
+            weekHigh52: fundamentalsData.week52High || 0,
+            weekLow52: fundamentalsData.week52Low || 0
           };
         }
         
