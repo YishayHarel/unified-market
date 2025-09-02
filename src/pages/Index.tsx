@@ -22,7 +22,7 @@ const Index = () => {
             </Button>
           </div>
         )}
-        <h1 className="text-4xl font-bold">📈 Stock Tracker</h1>
+        <h1 className="text-4xl font-bold">📈 UnifiedMarket</h1>
         <p className="text-muted-foreground mt-2">Your gateway to financial markets</p>
         {!user && (
           <div className="mt-4">
