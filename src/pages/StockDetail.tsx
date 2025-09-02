@@ -55,21 +55,32 @@ const StockDetail = () => {
           console.error('Error fetching stock info:', stockError);
         }
         
-        // Then get real-time price data
-        const { data: priceData, error: priceError } = await supabase.functions.invoke('get-stock-prices', {
-          body: { symbols: [symbol.toUpperCase()] }
-        });
+        // Then get real-time price data and fundamentals
+        const [priceResponse, fundamentalsResponse] = await Promise.all([
+          supabase.functions.invoke('get-stock-prices', {
+            body: { symbols: [symbol.toUpperCase()] }
+          }),
+          supabase.functions.invoke('get-stock-fundamentals', {
+            body: { symbol: symbol.toUpperCase() }
+          })
+        ]);
         
-        if (priceError) {
-          console.error('Error fetching price data:', priceError);
+        if (priceResponse.error) {
+          console.error('Error fetching price data:', priceResponse.error);
           toast.error('Failed to load stock price data');
+        }
+        
+        if (fundamentalsResponse.error) {
+          console.error('Error fetching fundamentals data:', fundamentalsResponse.error);
         }
         
         // Combine the data
         let stockData: StockData;
         
-        if (priceData && priceData.length > 0) {
-          const price = priceData[0];
+        if (priceResponse.data && priceResponse.data.length > 0) {
+          const price = priceResponse.data[0];
+          const fundamentals = fundamentalsResponse.data || {};
+          
           stockData = {
             symbol: symbol.toUpperCase(),
             name: stockInfo?.name || getCompanyName(symbol),
@@ -80,14 +91,15 @@ const StockDetail = () => {
             low: price.low || price.price || 0,
             open: price.open || price.price || 0,
             volume: 0, // Would need different API call for volume
-            marketCap: formatMarketCap(stockInfo?.market_cap),
-            peRatio: 0, // Would need fundamental data API
-            dividendYield: 0, // Would need fundamental data API  
-            weekHigh52: 0, // Would need historical data API
-            weekLow52: 0 // Would need historical data API
+            marketCap: formatMarketCap(fundamentals.marketCapitalization || stockInfo?.market_cap),
+            peRatio: fundamentals.peRatio || 0,
+            dividendYield: fundamentals.dividendYield || 0,  
+            weekHigh52: fundamentals.week52High || 0,
+            weekLow52: fundamentals.week52Low || 0
           };
         } else {
           // Fallback data if API fails
+          const fundamentals = fundamentalsResponse.data || {};
           stockData = {
             symbol: symbol.toUpperCase(),
             name: stockInfo?.name || getCompanyName(symbol),
@@ -98,11 +110,11 @@ const StockDetail = () => {
             low: 0,
             open: 0,
             volume: 0,
-            marketCap: formatMarketCap(stockInfo?.market_cap),
-            peRatio: 0,
-            dividendYield: 0,
-            weekHigh52: 0,
-            weekLow52: 0
+            marketCap: formatMarketCap(fundamentals.marketCapitalization || stockInfo?.market_cap),
+            peRatio: fundamentals.peRatio || 0,
+            dividendYield: fundamentals.dividendYield || 0,
+            weekHigh52: fundamentals.week52High || 0,
+            weekLow52: fundamentals.week52Low || 0
           };
         }
         
@@ -253,7 +265,12 @@ const StockDetail = () => {
 
             {/* Chart */}
             <div className="h-64">
-              <StockChart symbol={stockData.symbol} period={selectedPeriod} />
+              <StockChart 
+                symbol={stockData.symbol} 
+                period={selectedPeriod}
+                currentPrice={stockData.price}
+                dayChange={stockData.change}
+              />
             </div>
           </CardContent>
         </Card>

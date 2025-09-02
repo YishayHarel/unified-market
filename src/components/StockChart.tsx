@@ -3,6 +3,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 interface StockChartProps {
   symbol: string;
   period: string;
+  currentPrice?: number;
+  dayChange?: number;
 }
 
 interface ChartData {
@@ -20,24 +22,24 @@ interface HoverData {
   x: number;
 }
 
-const StockChart = ({ symbol, period }: StockChartProps) => {
+const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockChartProps) => {
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
   const [hoverData, setHoverData] = useState<HoverData | null>(null);
   const [isHovering, setIsHovering] = useState(false);
-  const [dayStartPrice, setDayStartPrice] = useState<number>(175.43);
+  const [dayStartPrice, setDayStartPrice] = useState<number>(currentPrice);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLoading(true);
     
-    const generateRealtimeData = (period: string) => {
+    const generateRealtimeData = (period: string, currentPrice: number) => {
       const now = new Date();
       const data: ChartData[] = [];
-      let basePrice = 175.43;
+      let basePrice = currentPrice || 100; // Fallback if no currentPrice provided
       let points = 50;
-      let intervalMinutes = 5; // 5-minute intervals for granular data
+      let intervalMinutes = 5;
       
       switch (period) {
         case '1H':
@@ -70,21 +72,31 @@ const StockChart = ({ symbol, period }: StockChartProps) => {
           break;
       }
 
-      // Generate more realistic stock movement
+      // More sophisticated price movement starting from actual current price
       const volatility = period === '1H' ? 0.3 : period === '1D' ? 0.8 : 1.2;
+      const targetEndPrice = currentPrice || basePrice;
+      const totalChange = dayChange || 0;
       
       for (let i = points; i >= 0; i--) {
         const time = new Date(now);
         time.setMinutes(time.getMinutes() - (i * intervalMinutes));
 
-        // More sophisticated price movement
-        const trend = Math.sin(i / 10) * 0.5; // Slight trending
+        // Calculate price progression to end at currentPrice
+        const progress = (points - i) / points;
+        const trend = totalChange * progress; // Gradual trend toward final price
         const randomWalk = (Math.random() - 0.5) * volatility;
         const dayOfWeekEffect = time.getDay() === 1 ? 0.2 : 0; // Monday effect
         
-        basePrice += trend + randomWalk + dayOfWeekEffect;
-        basePrice = Math.max(basePrice, 140);
-        basePrice = Math.min(basePrice, 210);
+        if (i === 0) {
+          // Final point should be exactly currentPrice
+          basePrice = targetEndPrice;
+        } else {
+          basePrice = (targetEndPrice - totalChange) + trend + randomWalk + dayOfWeekEffect;
+        }
+        
+        // Ensure reasonable bounds
+        basePrice = Math.max(basePrice, targetEndPrice * 0.8);
+        basePrice = Math.min(basePrice, targetEndPrice * 1.2);
 
         let formattedTime = '';
         let formattedDate = '';
@@ -137,14 +149,14 @@ const StockChart = ({ symbol, period }: StockChartProps) => {
       return data;
     };
 
-    const mockData = generateRealtimeData(period);
-    setDayStartPrice(mockData[0]?.price || 175.43);
+    const mockData = generateRealtimeData(period, currentPrice || 100);
+    setDayStartPrice(currentPrice - dayChange || mockData[0]?.price || 100);
     
     setTimeout(() => {
       setChartData(mockData);
       setLoading(false);
     }, 150);
-  }, [symbol, period]);
+  }, [symbol, period, currentPrice, dayChange]);
 
   const handleMouseMove = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
     if (!svgRef.current || chartData.length === 0) return;
@@ -200,8 +212,8 @@ const StockChart = ({ symbol, period }: StockChartProps) => {
   const chartHeight = 300;
 
   // Determine if stock is up or down based on hover or current price
-  const currentPrice = hoverData?.price || chartData[chartData.length - 1]?.price || 0;
-  const isUp = currentPrice >= dayStartPrice;
+  const displayPrice = hoverData?.price || chartData[chartData.length - 1]?.price || 0;
+  const isUp = displayPrice >= dayStartPrice;
   const strokeColor = isUp ? 'hsl(142 71% 60%)' : 'hsl(0 72% 60%)';
 
   // Create SVG path
@@ -216,7 +228,7 @@ const StockChart = ({ symbol, period }: StockChartProps) => {
       {/* Price Display */}
       <div className="absolute top-0 left-0 z-10 mb-4">
         <div className="text-2xl font-bold">
-          ${currentPrice.toFixed(2)}
+          ${displayPrice.toFixed(2)}
         </div>
         {hoverData && (
           <div className="text-sm text-muted-foreground">
