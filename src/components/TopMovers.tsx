@@ -48,28 +48,23 @@ const TopMovers = () => {
 
   const fetchTopMovers = async () => {
     try {
-      // Prefer top ~200 by market cap; fallback to predefined symbols
-      let stockList: { symbol: string; name: string }[] = [];
-
-      const { data: byCap } = await supabase
+      // Fetch only top 100 stocks for movers calculation
+      const { data: top100Stocks } = await supabase
         .from('stocks')
         .select('symbol, name, market_cap')
+        .eq('is_top_100', true)
         .order('market_cap', { ascending: false })
-        .limit(200);
+        .limit(100);
 
-      if (byCap && byCap.length > 0) {
-        stockList = byCap as any;
-      } else {
-        const { data: fallbackStocks } = await supabase
-          .from('stocks')
-          .select('symbol, name')
-          .in('symbol', FALLBACK_SYMBOLS)
-          .limit(FALLBACK_SYMBOLS.length);
-        stockList = (fallbackStocks as any) ?? FALLBACK_SYMBOLS.map((s) => ({ symbol: s, name: s }));
+      if (!top100Stocks || top100Stocks.length === 0) {
+        console.log('No top 100 stocks found, using fallback');
+        const fallbackList = FALLBACK_SYMBOLS.map((s) => ({ symbol: s, name: s }));
+        setMovers(generateFallbackMovers(fallbackList));
+        return;
       }
 
-      const symbols = stockList.map((s) => s.symbol);
-      console.log('Fetching prices for top movers from:', symbols.length, 'symbols');
+      const symbols = top100Stocks.map((s) => s.symbol);
+      console.log('Fetching prices for top movers from top 100:', symbols.length, 'stocks');
 
       const { data: priceData, error: priceError } = await supabase.functions.invoke('get-stock-prices', {
         body: { symbols },
@@ -83,7 +78,7 @@ const TopMovers = () => {
         // Find the actual top movers based on real-time percentage changes
         const moversData = priceData
           .map((price: any) => {
-            const stock = stockList.find((s) => s.symbol === price.symbol);
+            const stock = top100Stocks.find((s) => s.symbol === price.symbol);
             return stock
               ? {
                   symbol: price.symbol,
@@ -98,11 +93,11 @@ const TopMovers = () => {
           .sort((a: any, b: any) => Math.abs(b.changePercent) - Math.abs(a.changePercent))
           .slice(0, 3);
 
-        console.log('Top movers found:', moversData);
+        console.log('Top movers found from top 100:', moversData);
         setMovers(moversData);
       } else {
         console.log('No price data returned, generating fallback movers');
-        setMovers(generateFallbackMovers(stockList));
+        setMovers(generateFallbackMovers(top100Stocks));
       }
     } catch (error) {
       console.error('Error fetching top movers:', error);
@@ -120,7 +115,7 @@ const TopMovers = () => {
   if (loading) {
     return (
       <section>
-        <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>
+      <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers (Top 100)</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="bg-card p-4 rounded-lg animate-pulse">
@@ -144,7 +139,7 @@ const TopMovers = () => {
 
   return (
     <section>
-      <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>
+      <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers (Top 100)</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {movers.map((stock) => {
           const positive = stock.change >= 0;

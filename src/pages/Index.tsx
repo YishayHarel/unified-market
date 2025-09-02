@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { LogOut, User } from "lucide-react";
 import TopMovers from "@/components/TopMovers";
-import { TopStocks } from "@/components/TopStocks";
 import NewsSection from "@/components/NewsSection";
 import StockSearch from "@/components/StockSearch";
 
@@ -39,9 +38,6 @@ const Index = () => {
 
       {/* Top Movers */}
       <TopMovers />
-
-      {/* Top 100 Stocks */}
-      <TopStocks />
 
       {/* Stock Search */}
       <StockSearch />
