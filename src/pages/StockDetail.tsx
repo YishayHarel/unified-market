@@ -8,6 +8,8 @@ import StockChart from "@/components/StockChart";
 import StockFundamentals from "@/components/StockFundamentals";
 import StockNews from "@/components/StockNews";
 import AnalystRatings from "@/components/AnalystRatings";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface StockData {
   symbol: string;
@@ -37,39 +39,107 @@ const StockDetail = () => {
 
   useEffect(() => {
     if (!symbol) return;
-
-    // Mock data - replace with real API call
-    const mockData: StockData = {
-      symbol: symbol.toUpperCase(),
-      name: getCompanyName(symbol),
-      price: 175.43,
-      change: 2.15,
-      changePercent: 1.24,
-      high: 177.23,
-      low: 173.85,
-      open: 174.20,
-      volume: 45623789,
-      marketCap: "2.8T",
-      peRatio: 28.5,
-      dividendYield: 0.52,
-      weekHigh52: 198.23,
-      weekLow52: 164.08
+    
+    const fetchStockData = async () => {
+      try {
+        setLoading(true);
+        
+        // First, get basic stock info from database
+        const { data: stockInfo, error: stockError } = await supabase
+          .from('stocks')
+          .select('symbol, name, market_cap')
+          .eq('symbol', symbol.toUpperCase())
+          .single();
+        
+        if (stockError && stockError.code !== 'PGRST116') {
+          console.error('Error fetching stock info:', stockError);
+        }
+        
+        // Then get real-time price data
+        const { data: priceData, error: priceError } = await supabase.functions.invoke('get-stock-prices', {
+          body: { symbols: [symbol.toUpperCase()] }
+        });
+        
+        if (priceError) {
+          console.error('Error fetching price data:', priceError);
+          toast.error('Failed to load stock price data');
+        }
+        
+        // Combine the data
+        let stockData: StockData;
+        
+        if (priceData && priceData.length > 0) {
+          const price = priceData[0];
+          stockData = {
+            symbol: symbol.toUpperCase(),
+            name: stockInfo?.name || getCompanyName(symbol),
+            price: price.price || 0,
+            change: price.change || 0,
+            changePercent: price.changePercent || 0,
+            high: price.high || price.price || 0,
+            low: price.low || price.price || 0,
+            open: price.open || price.price || 0,
+            volume: 0, // Would need different API call for volume
+            marketCap: formatMarketCap(stockInfo?.market_cap),
+            peRatio: 0, // Would need fundamental data API
+            dividendYield: 0, // Would need fundamental data API  
+            weekHigh52: 0, // Would need historical data API
+            weekLow52: 0 // Would need historical data API
+          };
+        } else {
+          // Fallback data if API fails
+          stockData = {
+            symbol: symbol.toUpperCase(),
+            name: stockInfo?.name || getCompanyName(symbol),
+            price: 0,
+            change: 0,
+            changePercent: 0,
+            high: 0,
+            low: 0,
+            open: 0,
+            volume: 0,
+            marketCap: formatMarketCap(stockInfo?.market_cap),
+            peRatio: 0,
+            dividendYield: 0,
+            weekHigh52: 0,
+            weekLow52: 0
+          };
+        }
+        
+        setStockData(stockData);
+      } catch (error) {
+        console.error('Error in fetchStockData:', error);
+        toast.error('Failed to load stock data');
+      } finally {
+        setLoading(false);
+      }
     };
-
-    setTimeout(() => {
-      setStockData(mockData);
-      setLoading(false);
-    }, 800);
+    
+    fetchStockData();
   }, [symbol]);
+  
+  const formatMarketCap = (marketCap: number | null) => {
+    if (!marketCap) return 'N/A';
+    
+    if (marketCap >= 1e12) {
+      return `$${(marketCap / 1e12).toFixed(1)}T`;
+    } else if (marketCap >= 1e9) {
+      return `$${(marketCap / 1e9).toFixed(1)}B`;
+    } else if (marketCap >= 1e6) {
+      return `$${(marketCap / 1e6).toFixed(1)}M`;
+    }
+    return `$${marketCap.toLocaleString()}`;
+  };
 
   const getCompanyName = (symbol: string) => {
     const companies: Record<string, string> = {
       AAPL: "Apple Inc.",
       GOOGL: "Alphabet Inc.",
-      MSFT: "Microsoft Corporation",
+      MSFT: "Microsoft Corporation", 
       TSLA: "Tesla Inc.",
       AMZN: "Amazon.com Inc.",
-      NVDA: "NVIDIA Corporation"
+      NVDA: "NVIDIA Corporation",
+      CL: "Colgate-Palmolive Company"
     };
     return companies[symbol.toUpperCase()] || `${symbol.toUpperCase()} Inc.`;
   };
