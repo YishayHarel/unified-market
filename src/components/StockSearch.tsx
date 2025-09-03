@@ -212,7 +212,7 @@ const StockSearch = () => {
             setSearchQuery(e.target.value);
             debouncedSearch(e.target.value);
           }}
-          className="pl-10 bg-card"
+          className="pl-10 bg-card border border-border"
         />
       </div>
 
@@ -228,7 +228,7 @@ const StockSearch = () => {
           {results.map((stock) => (
             <div
               key={stock.symbol}
-              className="bg-card p-4 rounded-lg flex items-center justify-between hover:bg-muted/30 transition-colors cursor-pointer"
+              className="bg-card p-4 rounded-lg border border-border flex items-center justify-between hover:bg-muted/30 transition-colors cursor-pointer shadow-sm"
               onClick={() => navigate(`/stock/${stock.symbol}`)}
             >
               <div className="flex items-center gap-3">

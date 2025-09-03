@@ -146,7 +146,7 @@ const TopMovers = () => {
           return (
             <div 
               key={stock.symbol} 
-              className="bg-card p-4 rounded-lg hover:bg-muted/30 transition-colors cursor-pointer"
+              className="bg-card p-4 rounded-lg border border-border hover:bg-muted/30 transition-colors cursor-pointer shadow-sm"
               onClick={() => navigate(`/stock/${stock.symbol}`)}
             >
               <div className="flex items-center gap-3 mb-3">

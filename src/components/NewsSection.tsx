@@ -100,7 +100,7 @@ const NewsSection = () => {
       <h2 className="text-2xl font-semibold mb-4">📰 Latest News</h2>
       <div className="space-y-4">
         {displayedNews.map((article, index) => (
-          <Card key={`${article.url}-${index}`} className="hover:shadow-md transition-shadow">
+          <Card key={`${article.url}-${index}`} className="hover:shadow-md transition-shadow border border-border shadow-sm">
             <CardHeader>
               <div className="flex items-start justify-between gap-4">
                 <CardTitle className="text-lg leading-tight">
