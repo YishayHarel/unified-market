@@ -33,7 +33,7 @@ const Index = () => {
                 <img 
                   src={bullLogo} 
                   alt="UnifiedMarket Bull Logo" 
-                  className="w-24 h-24 object-contain"
+                  className="w-32 h-32 object-contain"
                 />
                 <h1 className="text-5xl md:text-6xl font-bold bg-gradient-primary bg-clip-text text-transparent">
                   UnifiedMarket
