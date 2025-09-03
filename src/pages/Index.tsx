@@ -5,6 +5,7 @@ import { LogOut, User } from "lucide-react";
 import TopMovers from "@/components/TopMovers";
 import NewsSection from "@/components/NewsSection";
 import StockSearch from "@/components/StockSearch";
+import bullLogo from "@/assets/bull-logo.png";
 
 const Index = () => {
   const { user, signOut } = useAuth();
@@ -28,9 +29,16 @@ const Index = () => {
             )}
             
             <div className="space-y-4">
-              <h1 className="text-5xl md:text-6xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                📈 UnifiedMarket
-              </h1>
+              <div className="flex items-center justify-center gap-4">
+                <img 
+                  src={bullLogo} 
+                  alt="UnifiedMarket Bull Logo" 
+                  className="w-16 h-16 object-contain"
+                />
+                <h1 className="text-5xl md:text-6xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+                  UnifiedMarket
+                </h1>
+              </div>
               <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
                 Your gateway to <span className="text-primary font-semibold">financial markets</span>, 
                 powered by AI-driven insights and real-time data
