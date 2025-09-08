@@ -48,7 +48,7 @@ const Index = () => {
             {!user && (
               <div className="mt-8 space-y-4">
                 <Button asChild size="lg" className="bg-gradient-primary hover:opacity-90 shadow-elegant text-lg px-8 py-6">
-                  <Link to="/auth">Get Started Free</Link>
+                  <Link to="/auth">Get Started For Free</Link>
                 </Button>
                 <p className="text-sm text-muted-foreground max-w-md mx-auto">
                   Join thousands of investors • Save stocks • Track dividends • Get personalized insights
