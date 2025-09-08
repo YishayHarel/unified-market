@@ -105,7 +105,25 @@ serve(async (req) => {
     if (!response.ok) {
       const errorData = await response.text();
       console.error('OpenAI API error:', errorData);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      
+      // Handle specific OpenAI API errors with user-friendly messages
+      if (response.status === 429) {
+        try {
+          const errorJson = JSON.parse(errorData);
+          if (errorJson.error?.code === 'insufficient_quota') {
+            throw new Error("The AI service is temporarily unavailable due to quota limits. Please try again later or contact support.");
+          }
+          throw new Error("The AI service is experiencing high demand. Please try again in a few moments.");
+        } catch (parseError) {
+          throw new Error("The AI service is experiencing high demand. Please try again in a few moments.");
+        }
+      } else if (response.status === 401) {
+        throw new Error("AI service authentication error. Please contact support.");
+      } else if (response.status >= 500) {
+        throw new Error("The AI service is temporarily down. Please try again later.");
+      } else {
+        throw new Error(`AI service error (${response.status}). Please try again later.`);
+      }
     }
 
     const data = await response.json();
