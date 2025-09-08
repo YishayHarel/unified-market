@@ -10,7 +10,7 @@ import { getAnalyticsData } from '@/hooks/useAnalytics';
 const PerformanceMonitor = () => {
   const [errors, setErrors] = useState<any[]>([]);
   const [analytics, setAnalytics] = useState<any[]>([]);
-  const [performance, setPerformance] = useState<any>(null);
+  const [perfData, setPerfData] = useState<any>(null);
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
@@ -19,16 +19,28 @@ const PerformanceMonitor = () => {
     setAnalytics(getAnalyticsData());
 
     // Get performance metrics
-    if ('performance' in window && performance.navigation) {
-      const timing = performance.timing;
-      const perf = {
-        pageLoad: timing.loadEventEnd - timing.navigationStart,
-        domReady: timing.domContentLoadedEventEnd - timing.navigationStart,
-        firstPaint: performance.getEntriesByType('paint').find(
-          entry => entry.name === 'first-contentful-paint'
-        )?.startTime || 0,
-      };
-      setPerformance(perf);
+    if ('performance' in window) {
+      const wp = window.performance as any;
+      let pageLoad = 0;
+      let domReady = 0;
+      let firstPaint = 0;
+
+      const navEntries = wp.getEntriesByType ? (wp.getEntriesByType('navigation') as any[]) : [];
+      if (navEntries && navEntries.length > 0) {
+        const nav = navEntries[0];
+        pageLoad = (nav.loadEventEnd || 0) - (nav.startTime || 0);
+        domReady = (nav.domContentLoadedEventEnd || 0) - (nav.startTime || 0);
+      } else if (wp.timing) {
+        const t = wp.timing;
+        pageLoad = (t.loadEventEnd || 0) - (t.navigationStart || 0);
+        domReady = (t.domContentLoadedEventEnd || 0) - (t.navigationStart || 0);
+      }
+
+      const paints = wp.getEntriesByType ? (wp.getEntriesByType('paint') as any[]) : [];
+      const fcp = paints.find((e: any) => e.name === 'first-contentful-paint');
+      firstPaint = fcp?.startTime || 0;
+
+      setPerfData({ pageLoad, domReady, firstPaint });
     }
   }, [isOpen]);
 
@@ -80,24 +92,24 @@ const PerformanceMonitor = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {performance && (
+                {perfData && (
                   <>
                     <div className="flex justify-between text-xs">
                       <span>Page Load:</span>
-                      <Badge variant={getPerformanceStatus(performance.pageLoad, [2000, 4000]) === 'good' ? 'default' : 'destructive'}>
-                        {performance.pageLoad}ms
+                      <Badge variant={getPerformanceStatus(perfData.pageLoad, [2000, 4000]) === 'good' ? 'default' : 'destructive'}>
+                        {perfData.pageLoad}ms
                       </Badge>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span>DOM Ready:</span>
-                      <Badge variant={getPerformanceStatus(performance.domReady, [1000, 2000]) === 'good' ? 'default' : 'destructive'}>
-                        {performance.domReady}ms
+                      <Badge variant={getPerformanceStatus(perfData.domReady, [1000, 2000]) === 'good' ? 'default' : 'destructive'}>
+                        {perfData.domReady}ms
                       </Badge>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span>First Paint:</span>
-                      <Badge variant={getPerformanceStatus(performance.firstPaint, [1000, 2000]) === 'good' ? 'default' : 'destructive'}>
-                        {Math.round(performance.firstPaint)}ms
+                      <Badge variant={getPerformanceStatus(perfData.firstPaint, [1000, 2000]) === 'good' ? 'default' : 'destructive'}>
+                        {Math.round(perfData.firstPaint)}ms
                       </Badge>
                     </div>
                   </>
