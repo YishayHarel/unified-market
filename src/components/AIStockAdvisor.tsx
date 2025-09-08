@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Bot } from 'lucide-react';
+import { analytics } from '@/hooks/useAnalytics';
 
 const AIStockAdvisor = () => {
   const [message, setMessage] = useState('');
@@ -15,6 +16,12 @@ const AIStockAdvisor = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim()) return;
+
+    // Track AI usage
+    analytics.featureUsage('ai_stock_advisor', {
+      messageLength: message.length,
+      timestamp: new Date().toISOString()
+    });
 
     setIsLoading(true);
     try {

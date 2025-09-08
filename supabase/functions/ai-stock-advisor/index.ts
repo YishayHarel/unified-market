@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { checkRateLimit } from "../rate-limiter/index.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -38,6 +39,23 @@ serve(async (req) => {
     console.log('User authenticated:', userData.user.email);
 
     console.log('User authenticated, proceeding with free AI access');
+
+    // Rate limiting: 10 requests per minute per user
+    const rateLimit = checkRateLimit(`ai_advisor_${userData.user.id}`, 10, 60 * 1000);
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ 
+          error: "Rate limit exceeded. Please try again later.",
+          resetTime: rateLimit.resetTime 
+        }), 
+        { 
+          status: 429, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    console.log(`Rate limit check passed. Remaining requests: ${rateLimit.remaining}`);
 
     // Get the user's message
     const { message } = await req.json();

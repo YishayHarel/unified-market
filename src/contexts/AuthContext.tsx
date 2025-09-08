@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { analytics } from '@/hooks/useAnalytics';
 
 interface AuthContextType {
   user: User | null;
@@ -37,10 +38,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         
         if (event === 'SIGNED_IN') {
+          analytics.setUserId(session?.user?.id || '');
+          analytics.userAction('sign_in', { method: 'email' });
           toast({
             title: "Welcome back!",
             description: "You have been signed in successfully.",
           });
+        }
+        
+        if (event === 'SIGNED_OUT') {
+          analytics.userAction('sign_out');
         }
       }
     );
