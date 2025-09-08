@@ -2,7 +2,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "react-router-dom";
-import { Bot, Crown, LogIn } from "lucide-react";
+import { Bot, LogIn } from "lucide-react";
 import AIStockAdvisor from "@/components/AIStockAdvisor";
 
 const YishAI = () => {
@@ -14,8 +14,7 @@ const YishAI = () => {
         <div className="max-w-2xl mx-auto space-y-6">
           <header className="text-center">
             <div className="flex items-center justify-center gap-2 mb-4">
-              <Bot className="h-8 w-8 text-primary" />
-              <Crown className="h-6 w-6 text-yellow-500" />
+            <Bot className="h-8 w-8 text-primary" />
             </div>
             <h1 className="text-3xl font-bold">YishAI Stock Advisor</h1>
             <p className="text-muted-foreground mt-2">
@@ -25,9 +24,9 @@ const YishAI = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-center">Premium AI Features</CardTitle>
+              <CardTitle className="text-center">Free AI Features</CardTitle>
               <CardDescription className="text-center">
-                Sign in and subscribe to access our advanced AI stock advisor
+                Sign in to access our AI stock advisor - completely free!
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -71,7 +70,6 @@ const YishAI = () => {
         <header className="text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Bot className="h-8 w-8 text-primary" />
-            <Crown className="h-6 w-6 text-yellow-500" />
           </div>
           <h1 className="text-3xl font-bold">YishAI Stock Advisor</h1>
           <p className="text-muted-foreground mt-2">

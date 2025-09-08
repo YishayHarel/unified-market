@@ -37,24 +37,7 @@ serve(async (req) => {
 
     console.log('User authenticated:', userData.user.email);
 
-    // Check if user has active subscription
-    const { data: subscriptionData, error: subError } = await supabaseClient
-      .from('subscribers')
-      .select('subscribed, subscription_tier')
-      .eq('user_id', userData.user.id)
-      .single();
-
-    if (subError || !subscriptionData?.subscribed) {
-      return new Response(
-        JSON.stringify({ error: "Premium subscription required to access AI features" }), 
-        { 
-          status: 403, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    console.log('User has active subscription:', subscriptionData.subscription_tier);
+    console.log('User authenticated, proceeding with free AI access');
 
     // Get the user's message
     const { message } = await req.json();

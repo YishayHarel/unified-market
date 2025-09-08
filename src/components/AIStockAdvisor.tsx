@@ -4,7 +4,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Bot, Crown } from 'lucide-react';
+import { Loader2, Bot } from 'lucide-react';
 
 const AIStockAdvisor = () => {
   const [message, setMessage] = useState('');
@@ -42,9 +42,7 @@ const AIStockAdvisor = () => {
       console.error('Error calling AI advisor:', error);
       
       let errorMessage = "Failed to get AI response";
-      if (error.message?.includes("Premium subscription required")) {
-        errorMessage = "You need a premium subscription to access AI features";
-      } else if (error.message?.includes("User not authenticated")) {
+      if (error.message?.includes("User not authenticated")) {
         errorMessage = "Please sign in to use AI features";
       }
 
@@ -65,10 +63,9 @@ const AIStockAdvisor = () => {
           <CardTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
             AI Stock Advisor
-            <Crown className="h-4 w-4 text-yellow-500" />
           </CardTitle>
           <CardDescription>
-            Get personalized stock market insights and analysis powered by AI. Premium feature for subscribers only.
+            Get personalized stock market insights and analysis powered by AI. Free for all users!
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
