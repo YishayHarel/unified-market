@@ -9,5 +9,11 @@ verify_jwt = false
 [functions.get-earnings]
 verify_jwt = false
 
+[functions.get-stock-fundamentals]
+verify_jwt = false
+
+[functions.update-top-100]
+verify_jwt = false
+
 [functions.ai-stock-advisor]
 verify_jwt = true
