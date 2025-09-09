@@ -65,60 +65,77 @@ serve(async (req) => {
 
     console.log('Processing message:', message);
 
-    // Get OpenAI API key
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openAIApiKey) {
-      throw new Error('OpenAI API key not configured');
+    // Get Google Gemini API key
+    const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+    if (!geminiApiKey) {
+      throw new Error('Google Gemini API key not configured');
     }
 
-    // Call OpenAI API with your custom GPT
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Call Google Gemini API
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-2025-04-14', // Using reliable GPT-4.1 model
-        messages: [
+        contents: [
           {
-            role: 'system',
-            content: `You are an expert stock market advisor AI. Provide detailed, accurate, and actionable stock market advice, analysis, and insights. Focus on:
-            - Technical and fundamental analysis
-            - Market trends and predictions
-            - Risk assessment and portfolio recommendations
-            - Stock recommendations with clear reasoning
-            - Market news interpretation and impact analysis
-            
-            Always provide disclaimers about investment risks and remind users to do their own research before making investment decisions.`
-          },
-          {
-            role: 'user',
-            content: message
+            parts: [
+              {
+                text: `You are YishAI, an expert stock market advisor AI created specifically for detailed financial analysis. Provide comprehensive, accurate, and actionable stock market advice with deep insights. Focus on:
+
+                DETAILED ANALYSIS:
+                - Technical analysis with specific indicators (RSI, MACD, Moving Averages, etc.)
+                - Fundamental analysis including P/E ratios, revenue growth, debt levels
+                - Market trends and sector analysis with specific data points
+                - Risk assessment with quantified metrics when possible
+                - Portfolio recommendations with allocation percentages
+                - Earnings analysis and forward-looking projections
+                - Competitor comparisons and market positioning
+                - Economic factors and their impact on specific stocks/sectors
+
+                RESPONSE FORMAT:
+                - Start with a clear executive summary
+                - Use bullet points for key insights
+                - Include specific numbers, percentages, and timeframes
+                - Provide both bullish and bearish perspectives
+                - End with clear action items or recommendations
+
+                CURRENT MARKET CONTEXT:
+                Consider recent market volatility, interest rate environment, inflation trends, and sector rotations in your analysis.
+
+                Always include appropriate disclaimers about investment risks and remind users that this is for educational purposes only.
+
+                User Question: ${message}`
+              }
+            ]
           }
         ],
-        max_completion_tokens: 1000, // Using max_completion_tokens for newer models
-        // Note: temperature parameter not supported for newer models
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.9,
+          maxOutputTokens: 2000,
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_FINANCIAL_ADVICE",
+            threshold: "BLOCK_NONE"
+          }
+        ]
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('OpenAI API error:', errorData);
+      console.error('Google Gemini API error:', errorData);
       
-      // Handle specific OpenAI API errors with user-friendly messages
+      // Handle specific Gemini API errors with user-friendly messages
       if (response.status === 429) {
-        try {
-          const errorJson = JSON.parse(errorData);
-          if (errorJson.error?.code === 'insufficient_quota') {
-            throw new Error("The AI service is temporarily unavailable due to quota limits. Please try again later or contact support.");
-          }
-          throw new Error("The AI service is experiencing high demand. Please try again in a few moments.");
-        } catch (parseError) {
-          throw new Error("The AI service is experiencing high demand. Please try again in a few moments.");
-        }
+        throw new Error("The AI service is experiencing high demand. Please try again in a few moments.");
       } else if (response.status === 401) {
-        throw new Error("AI service authentication error. Please contact support.");
+        throw new Error("AI service authentication error. Please check your API key.");
+      } else if (response.status === 403) {
+        throw new Error("AI service access denied. Please check your API key permissions.");
       } else if (response.status >= 500) {
         throw new Error("The AI service is temporarily down. Please try again later.");
       } else {
@@ -127,7 +144,13 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const aiResponse = data.choices[0].message.content;
+    console.log('Gemini API response:', JSON.stringify(data));
+    
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+      throw new Error("Invalid response from AI service");
+    }
+    
+    const aiResponse = data.candidates[0].content.parts[0].text;
 
     console.log('AI response generated successfully');
 

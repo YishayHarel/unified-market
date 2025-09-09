@@ -25,15 +25,19 @@ const PerformanceMonitor = () => {
       let domReady = 0;
       let firstPaint = 0;
 
-      const navEntries = wp.getEntriesByType ? (wp.getEntriesByType('navigation') as any[]) : [];
-      if (navEntries && navEntries.length > 0) {
-        const nav = navEntries[0];
-        pageLoad = (nav.loadEventEnd || 0) - (nav.startTime || 0);
-        domReady = (nav.domContentLoadedEventEnd || 0) - (nav.startTime || 0);
-      } else if (wp.timing) {
-        const t = wp.timing;
-        pageLoad = (t.loadEventEnd || 0) - (t.navigationStart || 0);
-        domReady = (t.domContentLoadedEventEnd || 0) - (t.navigationStart || 0);
+      try {
+        const navEntries = wp.getEntriesByType ? (wp.getEntriesByType('navigation') as any[]) : [];
+        if (navEntries && navEntries.length > 0) {
+          const nav = navEntries[0];
+          pageLoad = Math.round((nav.loadEventEnd || 0) - (nav.startTime || 0));
+          domReady = Math.round((nav.domContentLoadedEventEnd || 0) - (nav.startTime || 0));
+        } else if (wp.timing) {
+          const t = wp.timing;
+          pageLoad = Math.round((t.loadEventEnd || 0) - (t.navigationStart || 0));
+          domReady = Math.round((t.domContentLoadedEventEnd || 0) - (t.navigationStart || 0));
+        }
+      } catch (error) {
+        console.log('Navigation timing not available:', error);
       }
 
       const paints = wp.getEntriesByType ? (wp.getEntriesByType('paint') as any[]) : [];
