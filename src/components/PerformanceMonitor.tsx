@@ -19,32 +19,56 @@ const PerformanceMonitor = () => {
     setAnalytics(getAnalyticsData());
 
     // Get performance metrics
-    if ('performance' in window) {
-      const wp = window.performance as any;
-      let pageLoad = 0;
-      let domReady = 0;
-      let firstPaint = 0;
-
+    if ('performance' in window && window.performance) {
       try {
-        const navEntries = wp.getEntriesByType ? (wp.getEntriesByType('navigation') as any[]) : [];
-        if (navEntries && navEntries.length > 0) {
-          const nav = navEntries[0];
-          pageLoad = Math.round((nav.loadEventEnd || 0) - (nav.startTime || 0));
-          domReady = Math.round((nav.domContentLoadedEventEnd || 0) - (nav.startTime || 0));
-        } else if (wp.timing) {
-          const t = wp.timing;
-          pageLoad = Math.round((t.loadEventEnd || 0) - (t.navigationStart || 0));
-          domReady = Math.round((t.domContentLoadedEventEnd || 0) - (t.navigationStart || 0));
+        const wp = window.performance as any;
+        let pageLoad = 0;
+        let domReady = 0;
+        let firstPaint = 0;
+
+        try {
+          // Try modern Navigation Timing API first
+          if (wp.getEntriesByType) {
+            const navEntries = wp.getEntriesByType('navigation') as any[];
+            if (navEntries && navEntries.length > 0) {
+              const nav = navEntries[0];
+              if (nav) {
+                pageLoad = Math.round((nav.loadEventEnd || 0) - (nav.startTime || 0));
+                domReady = Math.round((nav.domContentLoadedEventEnd || 0) - (nav.startTime || 0));
+              }
+            }
+          }
+          
+          // Fallback to legacy timing API
+          if (pageLoad === 0 && wp.timing) {
+            const t = wp.timing;
+            if (t && t.navigationStart) {
+              pageLoad = Math.round((t.loadEventEnd || 0) - (t.navigationStart || 0));
+              domReady = Math.round((t.domContentLoadedEventEnd || 0) - (t.navigationStart || 0));
+            }
+          }
+        } catch (navError) {
+          console.log('Navigation timing not available:', navError);
         }
+
+        try {
+          // Get First Contentful Paint
+          if (wp.getEntriesByType) {
+            const paints = wp.getEntriesByType('paint') as any[];
+            const fcp = paints?.find((e: any) => e?.name === 'first-contentful-paint');
+            firstPaint = Math.round(fcp?.startTime || 0);
+          }
+        } catch (paintError) {
+          console.log('Paint timing not available:', paintError);
+        }
+
+        setPerfData({ pageLoad, domReady, firstPaint });
       } catch (error) {
-        console.log('Navigation timing not available:', error);
+        console.log('Performance API not fully available:', error);
+        setPerfData({ pageLoad: 0, domReady: 0, firstPaint: 0 });
       }
-
-      const paints = wp.getEntriesByType ? (wp.getEntriesByType('paint') as any[]) : [];
-      const fcp = paints.find((e: any) => e.name === 'first-contentful-paint');
-      firstPaint = fcp?.startTime || 0;
-
-      setPerfData({ pageLoad, domReady, firstPaint });
+    } else {
+      setPerfData({ pageLoad: 0, domReady: 0, firstPaint: 0 });
     }
   }, [isOpen]);
 
