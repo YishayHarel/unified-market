@@ -107,18 +107,61 @@ serve(async (req) => {
 
     console.log(`Rate limit check passed. Remaining requests: ${rateLimit.remaining}`);
 
-    // Get the user's message
-    const { message } = await req.json();
+    // Get the user's message and conversation history
+    const { message, conversationHistory } = await req.json();
     if (!message) {
       throw new Error("Message is required");
     }
 
-    console.log('Processing message:', message);
+    console.log('Processing conversation with', conversationHistory?.length || 0, 'previous messages');
 
     // Get Google Gemini API key
     const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
     if (!geminiApiKey) {
       throw new Error('Google Gemini API key not configured');
+    }
+
+    // Build conversation context for Gemini
+    let conversationText = `You are YishAI, an expert stock market advisor AI created specifically for detailed financial analysis. Provide comprehensive, accurate, and actionable stock market advice with deep insights.
+
+CONVERSATION CONTEXT:
+This is an ongoing conversation. Use the conversation history to provide contextual and personalized responses.
+
+DETAILED ANALYSIS FOCUS:
+- Technical analysis with specific indicators (RSI, MACD, Moving Averages, etc.)
+- Fundamental analysis including P/E ratios, revenue growth, debt levels
+- Market trends and sector analysis with specific data points
+- Risk assessment with quantified metrics when possible
+- Portfolio recommendations with allocation percentages
+- Earnings analysis and forward-looking projections
+- Competitor comparisons and market positioning
+- Economic factors and their impact on specific stocks/sectors
+
+RESPONSE FORMAT:
+- Be conversational and build upon previous discussion
+- Reference previous questions when relevant
+- Use bullet points for key insights
+- Include specific numbers, percentages, and timeframes
+- Provide both bullish and bearish perspectives
+- End with clear action items or recommendations when appropriate
+
+CURRENT MARKET CONTEXT:
+Consider recent market volatility, interest rate environment, inflation trends, and sector rotations in your analysis.
+
+Always include appropriate disclaimers about investment risks and remind users that this is for educational purposes only.
+
+`;
+
+    // Add conversation history if available
+    if (conversationHistory && conversationHistory.length > 0) {
+      conversationText += "\nCONVERSATION HISTORY:\n";
+      conversationHistory.forEach((msg: any, index: number) => {
+        const role = msg.role === 'user' ? 'User' : 'YishAI';
+        conversationText += `${role}: ${msg.content}\n`;
+      });
+      conversationText += `\nUser: ${message}`;
+    } else {
+      conversationText += `\nUser Question: ${message}`;
     }
 
     // Call Google Gemini API
@@ -132,31 +175,7 @@ serve(async (req) => {
           {
             parts: [
               {
-                text: `You are YishAI, an expert stock market advisor AI created specifically for detailed financial analysis. Provide comprehensive, accurate, and actionable stock market advice with deep insights. Focus on:
-
-                DETAILED ANALYSIS:
-                - Technical analysis with specific indicators (RSI, MACD, Moving Averages, etc.)
-                - Fundamental analysis including P/E ratios, revenue growth, debt levels
-                - Market trends and sector analysis with specific data points
-                - Risk assessment with quantified metrics when possible
-                - Portfolio recommendations with allocation percentages
-                - Earnings analysis and forward-looking projections
-                - Competitor comparisons and market positioning
-                - Economic factors and their impact on specific stocks/sectors
-
-                RESPONSE FORMAT:
-                - Start with a clear executive summary
-                - Use bullet points for key insights
-                - Include specific numbers, percentages, and timeframes
-                - Provide both bullish and bearish perspectives
-                - End with clear action items or recommendations
-
-                CURRENT MARKET CONTEXT:
-                Consider recent market volatility, interest rate environment, inflation trends, and sector rotations in your analysis.
-
-                Always include appropriate disclaimers about investment risks and remind users that this is for educational purposes only.
-
-                User Question: ${message}`
+                text: conversationText
               }
             ]
           }
