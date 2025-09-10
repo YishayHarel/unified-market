@@ -164,59 +164,80 @@ Always include appropriate disclaimers about investment risks and remind users t
       conversationText += `\nUser Question: ${message}`;
     }
 
-    // Call Google Gemini API
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiApiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    // Call Google Gemini API with retry logic for 503 errors
+    const requestBody = JSON.stringify({
+      contents: [
+        {
+          parts: [
+            {
+              text: conversationText
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        topP: 0.9,
+        maxOutputTokens: 2000,
       },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: conversationText
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.9,
-          maxOutputTokens: 2000,
+      safetySettings: [
+        {
+          category: "HARM_CATEGORY_HARASSMENT",
+          threshold: "BLOCK_NONE"
         },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_NONE"
-          }
-        ]
-      }),
+        {
+          category: "HARM_CATEGORY_HATE_SPEECH",
+          threshold: "BLOCK_NONE"
+        },
+        {
+          category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+          threshold: "BLOCK_NONE"
+        },
+        {
+          category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+          threshold: "BLOCK_NONE"
+        }
+      ]
     });
 
-    if (!response.ok) {
+    let response;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount <= maxRetries) {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiApiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: requestBody,
+      });
+
+      if (response.ok) {
+        break; // Success, exit retry loop
+      }
+
       const errorData = await response.text();
       console.error('Google Gemini API error:', errorData);
       
-      // Handle specific Gemini API errors with user-friendly messages
+      // If it's a 503 (service unavailable) and we have retries left, wait and retry
+      if (response.status === 503 && retryCount < maxRetries) {
+        const waitTime = Math.pow(2, retryCount) * 1000; // Exponential backoff: 1s, 2s, 4s
+        console.log(`API overloaded, retrying in ${waitTime}ms (attempt ${retryCount + 1}/${maxRetries + 1})`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        retryCount++;
+        continue;
+      }
+      
+      // Handle other errors or exhausted retries
       if (response.status === 429) {
         throw new Error("The AI service is experiencing high demand. Please try again in a few moments.");
       } else if (response.status === 401) {
         throw new Error("AI service authentication error. Please check your API key.");
       } else if (response.status === 403) {
         throw new Error("AI service access denied. Please check your API key permissions.");
+      } else if (response.status === 503) {
+        throw new Error("The AI service is temporarily overloaded. Please try again in a minute.");
       } else if (response.status >= 500) {
         throw new Error("The AI service is temporarily down. Please try again later.");
       } else {
