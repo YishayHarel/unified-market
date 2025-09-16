@@ -9,11 +9,11 @@
     --foreground: 210 11% 15%;
     --card: 142 45% 94%;
     --card-foreground: 210 11% 15%;
-    --popover: 0 0% 100%;
+    --popover: 142 45% 94%;
     --popover-foreground: 210 11% 15%;
     --primary: 142 76% 36%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96%;
+    --secondary: 142 45% 96%;
     --secondary-foreground: 210 11% 15%;
     --muted: 210 40% 96%;
     --muted-foreground: 210 6% 46%;
@@ -30,7 +30,7 @@
     
     /* Custom gradient and shadow tokens */
     --gradient-primary: linear-gradient(135deg, hsl(142 76% 36%), hsl(142 86% 45%));
-    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(210 40% 98%));
+    --gradient-card: linear-gradient(145deg, hsl(142 45% 96%), hsl(142 45% 92%));
     --shadow-elegant: 0 4px 16px -4px hsl(142 76% 36% / 0.1);
     --shadow-card: 0 2px 8px -2px hsl(210 11% 15% / 0.08);
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
