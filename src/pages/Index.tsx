@@ -12,8 +12,7 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Hero Section with Gradient Background */}
-      <div className="bg-gradient-card relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-primary opacity-5"></div>
+      <div className="bg-background relative overflow-hidden">
         <div className="relative p-6 pb-12 space-y-8">
           <header className="text-center relative max-w-4xl mx-auto">
             {user && (
