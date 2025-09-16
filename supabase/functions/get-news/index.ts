@@ -24,41 +24,97 @@ serve(async (req) => {
     const { category = 'business', country = 'us', pageSize = 20 } = requestBody
     console.log(`Fetching news: category=${category}, country=${country}, pageSize=${pageSize}`)
     
-    const newsApiKey = Deno.env.get('NEWS_API_KEY')
-    if (!newsApiKey) {
-      console.error('NEWS_API_KEY not found in environment')
-      throw new Error('NEWS_API_KEY not found')
-    }
-
-    const url = `https://newsapi.org/v2/top-headlines?category=${category}&country=${country}&pageSize=${pageSize}&apiKey=${newsApiKey}`
-    console.log('Calling News API...')
-    
-    // Add timeout to prevent edge function timeout
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
-    
-    const response = await fetch(url, { 
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'UnifiedMarket/1.0'
+    // Try multiple news sources for real-time updates
+    const sources = [
+      {
+        name: 'NewsData.io',
+        url: `https://newsdata.io/api/1/news?apikey=${Deno.env.get('NEWSDATA_API_KEY')}&country=us&category=business&size=${pageSize}`,
+        key: 'NEWSDATA_API_KEY'
+      },
+      {
+        name: 'NewsAPI.org',
+        url: `https://newsapi.org/v2/everything?q=business&language=en&sortBy=publishedAt&pageSize=${pageSize}&apiKey=${Deno.env.get('NEWS_API_KEY')}`,
+        key: 'NEWS_API_KEY'
       }
-    })
-    clearTimeout(timeoutId)
-    console.log(`News API response status: ${response.status}`)
+    ]
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`News API error: ${response.status} - ${errorText}`)
-      throw new Error(`News API error: ${response.status}`)
+    // Try sources in order until one works
+    let finalData = null
+    let lastError = null
+
+    for (const source of sources) {
+      const apiKey = Deno.env.get(source.key)
+      if (!apiKey) {
+        console.log(`${source.name} API key not found, skipping...`)
+        continue
+      }
+
+      try {
+        console.log(`Trying ${source.name}...`)
+        const url = source.url
+        
+        // Add timeout to prevent edge function timeout
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout
+        
+        const response = await fetch(url, { 
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'UnifiedMarket/1.0'
+          }
+        })
+        clearTimeout(timeoutId)
+        console.log(`${source.name} response status: ${response.status}`)
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error(`${source.name} error: ${response.status} - ${errorText}`)
+          lastError = new Error(`${source.name} error: ${response.status}`)
+          continue
+        }
+
+        const data = await response.json()
+        
+        // Normalize the response format
+        let articles = []
+        if (source.name === 'NewsData.io' && data.results) {
+          articles = data.results.map(article => ({
+            title: article.title,
+            description: article.description,
+            url: article.link,
+            urlToImage: article.image_url,
+            publishedAt: article.pubDate,
+            source: { name: article.source_id }
+          }))
+        } else if (data.articles) {
+          articles = data.articles
+        }
+
+        console.log(`${source.name} returned ${articles.length} articles`)
+        
+        if (articles.length > 0) {
+          finalData = { articles, totalResults: articles.length, status: 'ok' }
+          break
+        }
+      } catch (error) {
+        console.error(`Error with ${source.name}:`, error.message)
+        lastError = error
+        continue
+      }
     }
 
-    const data = await response.json()
-    console.log(`News API returned ${data.articles?.length || 0} articles`)
+    if (!finalData) {
+      throw lastError || new Error('All news sources failed')
+    }
     
     return new Response(
-      JSON.stringify(data),
+      JSON.stringify(finalData),
       { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'max-age=300' // Cache for 5 minutes only
+        },
         status: 200,
       },
     )
