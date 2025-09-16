@@ -7,9 +7,9 @@
     /* Modern light theme with beautiful green accents */
     --background: 142 60% 85%;
     --foreground: 210 11% 15%;
-    --card: 142 60% 85%;
+    --card: 0 0% 100%;
     --card-foreground: 210 11% 15%;
-    --popover: 142 60% 85%;
+    --popover: 0 0% 100%;
     --popover-foreground: 210 11% 15%;
     --primary: 142 76% 36%;
     --primary-foreground: 0 0% 100%;
