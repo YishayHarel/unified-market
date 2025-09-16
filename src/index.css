@@ -5,7 +5,7 @@
 @layer base {
   :root {
     /* Modern light theme with beautiful green accents */
-    --background: 142 60% 85%;
+    --background: 142 30% 92%;
     --foreground: 210 11% 15%;
     --card: 0 0% 100%;
     --card-foreground: 210 11% 15%;
@@ -13,7 +13,7 @@
     --popover-foreground: 210 11% 15%;
     --primary: 142 76% 36%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 142 60% 88%;
+    --secondary: 142 30% 95%;
     --secondary-foreground: 210 11% 15%;
     --muted: 210 40% 96%;
     --muted-foreground: 210 6% 46%;
