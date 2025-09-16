@@ -24,91 +24,40 @@ serve(async (req) => {
     const { category = 'business', country = 'us', pageSize = 20 } = requestBody
     console.log(`Fetching news: category=${category}, country=${country}, pageSize=${pageSize}`)
     
-    // Try multiple news sources for real-time updates
-    const sources = [
-      {
-        name: 'NewsData.io',
-        url: `https://newsdata.io/api/1/news?apikey=${Deno.env.get('NEWSDATA_API_KEY')}&country=us&category=business&size=${pageSize}`,
-        key: 'NEWSDATA_API_KEY'
-      },
-      {
-        name: 'NewsAPI.org',
-        url: `https://newsapi.org/v2/everything?q=business&language=en&sortBy=publishedAt&pageSize=${pageSize}&apiKey=${Deno.env.get('NEWS_API_KEY')}`,
-        key: 'NEWS_API_KEY'
-      }
-    ]
-
-    // Try sources in order until one works
-    let finalData = null
-    let lastError = null
-
-    for (const source of sources) {
-      const apiKey = Deno.env.get(source.key)
-      if (!apiKey) {
-        console.log(`${source.name} API key not found, skipping...`)
-        continue
-      }
-
-      try {
-        console.log(`Trying ${source.name}...`)
-        const url = source.url
-        
-        // Add timeout to prevent edge function timeout
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout
-        
-        const response = await fetch(url, { 
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'UnifiedMarket/1.0'
-          }
-        })
-        clearTimeout(timeoutId)
-        console.log(`${source.name} response status: ${response.status}`)
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          console.error(`${source.name} error: ${response.status} - ${errorText}`)
-          lastError = new Error(`${source.name} error: ${response.status}`)
-          continue
-        }
-
-        const data = await response.json()
-        
-        // Normalize the response format
-        let articles = []
-        if (source.name === 'NewsData.io' && data.results) {
-          articles = data.results.map(article => ({
-            title: article.title,
-            description: article.description,
-            url: article.link,
-            urlToImage: article.image_url,
-            publishedAt: article.pubDate,
-            source: { name: article.source_id }
-          }))
-        } else if (data.articles) {
-          articles = data.articles
-        }
-
-        console.log(`${source.name} returned ${articles.length} articles`)
-        
-        if (articles.length > 0) {
-          finalData = { articles, totalResults: articles.length, status: 'ok' }
-          break
-        }
-      } catch (error) {
-        console.error(`Error with ${source.name}:`, error.message)
-        lastError = error
-        continue
-      }
+    const newsApiKey = Deno.env.get('NEWS_API_KEY')
+    if (!newsApiKey) {
+      console.error('NEWS_API_KEY not found in environment')
+      throw new Error('NEWS_API_KEY not found')
     }
 
-    if (!finalData) {
-      throw lastError || new Error('All news sources failed')
+    // Use everything endpoint for more recent news
+    const url = `https://newsapi.org/v2/everything?q=(stocks OR finance OR market OR business)&language=en&sortBy=publishedAt&pageSize=${pageSize}&apiKey=${newsApiKey}`
+    console.log('Calling NewsAPI for recent business/finance news...')
+    
+    // Add timeout to prevent edge function timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout
+    
+    const response = await fetch(url, { 
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'UnifiedMarket/1.0'
+      }
+    })
+    clearTimeout(timeoutId)
+    console.log(`NewsAPI response status: ${response.status}`)
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`NewsAPI error: ${response.status} - ${errorText}`)
+      throw new Error(`NewsAPI error: ${response.status}`)
     }
+
+    const data = await response.json()
+    console.log(`NewsAPI returned ${data.articles?.length || 0} articles`)
     
     return new Response(
-      JSON.stringify(finalData),
+      JSON.stringify(data),
       { 
         headers: { 
           ...corsHeaders, 
