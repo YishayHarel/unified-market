@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      portfolio_holdings: {
+        Row: {
+          avg_cost: number
+          company_name: string | null
+          created_at: string
+          current_price: number | null
+          id: string
+          sector: string | null
+          shares: number
+          symbol: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avg_cost?: number
+          company_name?: string | null
+          created_at?: string
+          current_price?: number | null
+          id?: string
+          sector?: string | null
+          shares?: number
+          symbol: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avg_cost?: number
+          company_name?: string | null
+          created_at?: string
+          current_price?: number | null
+          id?: string
+          sector?: string | null
+          shares?: number
+          symbol?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -36,6 +75,69 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      social_follows: {
+        Row: {
+          created_at: string
+          follower_id: string
+          following_id: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          follower_id: string
+          following_id: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          follower_id?: string
+          following_id?: string
+          id?: string
+        }
+        Relationships: []
+      }
+      social_picks: {
+        Row: {
+          confidence_level: number | null
+          created_at: string
+          id: string
+          is_public: boolean
+          likes_count: number
+          pick_type: string
+          reasoning: string | null
+          symbol: string
+          target_price: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          confidence_level?: number | null
+          created_at?: string
+          id?: string
+          is_public?: boolean
+          likes_count?: number
+          pick_type: string
+          reasoning?: string | null
+          symbol: string
+          target_price?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          confidence_level?: number | null
+          created_at?: string
+          id?: string
+          is_public?: boolean
+          likes_count?: number
+          pick_type?: string
+          reasoning?: string | null
+          symbol?: string
+          target_price?: number | null
           updated_at?: string
           user_id?: string
         }
@@ -134,6 +236,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_preferences: {
+        Row: {
+          created_at: string
+          id: string
+          investment_goals: string[] | null
+          max_position_size: number | null
+          preferred_sectors: string[] | null
+          rebalance_threshold: number | null
+          risk_tolerance: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          investment_goals?: string[] | null
+          max_position_size?: number | null
+          preferred_sectors?: string[] | null
+          rebalance_threshold?: number | null
+          risk_tolerance?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          investment_goals?: string[] | null
+          max_position_size?: number | null
+          preferred_sectors?: string[] | null
+          rebalance_threshold?: number | null
+          risk_tolerance?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_saved_stocks: {
         Row: {
           id: string
@@ -154,6 +292,45 @@ export type Database = {
           name?: string | null
           saved_at?: string
           symbol?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      watchlist_alerts: {
+        Row: {
+          alert_type: string
+          created_at: string
+          id: string
+          is_active: boolean
+          message: string | null
+          symbol: string
+          target_price: number | null
+          triggered_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alert_type: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          message?: string | null
+          symbol: string
+          target_price?: number | null
+          triggered_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alert_type?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          message?: string | null
+          symbol?: string
+          target_price?: number | null
+          triggered_at?: string | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
