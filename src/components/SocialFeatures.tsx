@@ -71,12 +71,7 @@ const SocialFeatures = () => {
     try {
       const { data, error } = await supabase
         .from('social_picks')
-        .select(`
-          *,
-          profiles!social_picks_user_id_fkey (
-            display_name
-          )
-        `)
+        .select('*')
         .eq('is_public', true)
         .order('created_at', { ascending: false })
         .limit(50);
