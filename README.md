@@ -2,7 +2,7 @@
 
 A full-stack financial market platform with AI-powered insights, real-time stock tracking, and social investing features.
 
-🔗 **[Live Demo](https://your-domain.vercel.app)** | Built with React, TypeScript, and Supabase
+Built with React, TypeScript, and Supabase
 
 ## What It Does
 
