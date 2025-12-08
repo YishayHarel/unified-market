@@ -2,22 +2,21 @@
 
 A full-stack financial market platform with AI-powered insights, real-time stock tracking, and social investing features.
 
-Built with React, TypeScript, and Supabase
+Built with React, TypeScript, and Supabase.
 
-## What It Does
-
-UnifiedMarket is a comprehensive stock market application that combines real-time financial data with AI-driven analysis:
+## Features
 
 - **Real-time Stock Tracking** - Live prices, interactive charts, and market data via Finnhub API
 - **AI Stock Advisor** - Personalized investment recommendations using OpenAI and Google Gemini
-- **Smart News Aggregator** - Financial news with AI-generated summaries
+- **Smart News Summarizer** - Financial news with AI-generated summaries
 - **Portfolio Management** - Track holdings, dividends, and optimize asset allocation
 - **Social Investing** - Share picks, follow investors, and track prediction accuracy
 - **Earnings Calendar & Alerts** - Never miss important market events
+- **Fully Responsive** - Works on desktop, tablet, and mobile
 
-## Technologies Used
+## Tech Stack
 
-**Frontend:**
+### Frontend
 - React 18.3 + TypeScript
 - Vite (build tool)
 - Tailwind CSS + shadcn/ui components
@@ -25,25 +24,128 @@ UnifiedMarket is a comprehensive stock market application that combines real-tim
 - TanStack Query (data fetching)
 - Recharts (data visualization)
 
-**Backend:**
+### Backend
 - Supabase (PostgreSQL database, authentication, Row-Level Security)
 - Edge Functions (Deno runtime for serverless API)
 - OpenAI API & Google Gemini API (AI features)
 - Finnhub API (market data)
 - News API (financial news)
 
-**Deployment:**
-- Vercel (frontend hosting)
-- Supabase Cloud (backend infrastructure)
+## Getting Started
 
-## Key Features
+### Prerequisites
 
-- Secure user authentication with email/password and Google OAuth
-- Real-time data synchronization
-- Mobile-responsive design with bottom navigation
-- Dark/light mode support
-- API keys securely managed via Supabase environment variables
+Node.js 18+ is required. Install via [nvm](https://github.com/nvm-sh/nvm) (recommended) or [nodejs.org](https://nodejs.org/).
 
----
+### Installation
 
-*This project demonstrates full-stack development, API integration, AI implementation, and secure authentication patterns.*
+```bash
+# Clone the repository
+git clone https://github.com/YourUsername/UnifiedMarket.git
+cd UnifiedMarket
+
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+The app will be available at `http://localhost:8080`
+
+### Build for Production
+
+```bash
+npm run build    # Create optimized build
+npm run preview  # Preview production build locally
+```
+
+## Project Structure
+
+```
+UnifiedMarket/
+├── src/
+│   ├── components/          # Reusable UI components
+│   │   ├── ui/              # shadcn/ui base components
+│   │   ├── AIStockAdvisor.tsx
+│   │   ├── StockChart.tsx
+│   │   ├── TopMovers.tsx
+│   │   └── ...
+│   ├── pages/               # Route-level page components
+│   │   ├── Index.tsx        # Home page
+│   │   ├── StockDetail.tsx  # Individual stock view
+│   │   ├── Auth.tsx         # Login/signup
+│   │   └── ...
+│   ├── hooks/               # Custom React hooks
+│   ├── contexts/            # React Context providers
+│   ├── integrations/        # Third-party integrations (Supabase)
+│   ├── lib/                 # Utility functions
+│   └── index.css            # Global styles & design tokens
+├── supabase/
+│   ├── functions/           # Edge Functions (serverless API)
+│   │   ├── get-stock-prices/
+│   │   ├── ai-stock-advisor/
+│   │   ├── get-earnings/
+│   │   └── ...
+│   └── config.toml          # Supabase configuration
+└── public/                  # Static assets
+```
+
+## Database Schema
+
+The app uses 9 PostgreSQL tables with Row-Level Security:
+
+| Table | Purpose |
+|-------|---------|
+| `stocks` | Stock symbols, names, market caps, rankings |
+| `profiles` | User display names and avatars |
+| `user_saved_stocks` | User's watchlist/saved stocks |
+| `watchlist_alerts` | Price and event alerts |
+| `user_dividends` | Dividend tracking for holdings |
+| `portfolio_holdings` | User's stock positions |
+| `user_preferences` | Risk tolerance, investment goals |
+| `social_picks` | Shared investment picks (buy/sell/hold) |
+| `social_follows` | User follow relationships |
+
+## Edge Functions
+
+| Function | Purpose |
+|----------|---------|
+| `get-stock-prices` | Fetch real-time prices from Finnhub |
+| `get-stock-fundamentals` | Get P/E ratio, market cap, etc. |
+| `get-earnings` | Earnings calendar data |
+| `get-news` | Financial news from News API |
+| `ai-stock-advisor` | AI-powered stock recommendations |
+| `ai-portfolio-optimizer` | Portfolio optimization suggestions |
+| `smart-news-summarizer` | AI news summaries |
+| `market-sentiment` | Fear & Greed index, market health |
+| `update-top-100` | Recalculate top 100 stock rankings |
+
+## Environment Variables
+
+Required secrets (configured in Supabase):
+
+- `FINNHUB_API_KEY` - Stock market data
+- `NEWS_API_KEY` - Financial news
+- `OPENAI_API_KEY` - AI features
+- `GOOGLE_GEMINI_API_KEY` - Alternative AI model
+
+## Security
+
+- Row-Level Security (RLS) on all user data tables
+- JWT-based authentication via Supabase Auth
+- API keys stored as encrypted environment variables
+- User data isolated at the database level
+
+## Scripts
+
+```bash
+npm run dev      # Start development server
+npm run build    # Build for production
+npm run preview  # Preview production build
+npm run lint     # Run ESLint
+```
+
+## License
+
+MIT License
