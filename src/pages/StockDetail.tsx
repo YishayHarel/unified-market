@@ -242,7 +242,7 @@ const StockDetail = () => {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto p-4 space-y-6">
+      <div className="max-w-4xl mx-auto p-4 space-y-6 pb-24">
         {/* Price Section */}
         <Card className="bg-card">
           <CardContent className="p-6">
@@ -260,7 +260,7 @@ const StockDetail = () => {
                   <span className="font-medium">
                     {isPositive ? '+' : ''}{stockData.change.toFixed(2)} ({stockData.changePercent.toFixed(2)}%)
                   </span>
-                  <span className="text-muted-foreground text-sm">Today</span>
+                  <span className="text-muted-foreground text-sm">At close · 4:00 PM ET</span>
                 </div>
               </div>
             </div>
