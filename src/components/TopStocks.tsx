@@ -26,8 +26,8 @@ export const TopStocks = () => {
 
   const fetchTopStocks = async () => {
     try {
-      const { data, error } = await supabase
-        .from('stocks')
+      const { data, error } = await (supabase
+        .from('stocks') as any)
         .select('id, symbol, name, market_cap, rank_score, last_return_1d, last_ranked_at')
         .eq('is_top_100', true)
         .order('rank_score', { ascending: false })

@@ -31,8 +31,8 @@ const UserSavedStocks = () => {
 
   const fetchSavedStocks = async () => {
     try {
-      const { data, error } = await supabase
-        .from("user_saved_stocks")
+      const { data, error } = await (supabase
+        .from("user_saved_stocks") as any)
         .select("*")
         .order("saved_at", { ascending: false });
 
@@ -55,8 +55,8 @@ const UserSavedStocks = () => {
     
     setAdding(true);
     try {
-      const { error } = await supabase
-        .from("user_saved_stocks")
+      const { error } = await (supabase
+        .from("user_saved_stocks") as any)
         .insert({
           user_id: user!.id,
           symbol: searchSymbol.toUpperCase(),
@@ -95,8 +95,8 @@ const UserSavedStocks = () => {
 
   const removeStock = async (stockId: string, symbol: string) => {
     try {
-      const { error } = await supabase
-        .from("user_saved_stocks")
+      const { error } = await (supabase
+        .from("user_saved_stocks") as any)
         .delete()
         .eq("id", stockId);
 

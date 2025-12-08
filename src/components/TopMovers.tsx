@@ -49,8 +49,8 @@ const TopMovers = () => {
   const fetchTopMovers = async () => {
     try {
       // Fetch only top 100 stocks for movers calculation
-      const { data: top100Stocks } = await supabase
-        .from('stocks')
+      const { data: top100Stocks } = await (supabase
+        .from('stocks') as any)
         .select('symbol, name, market_cap')
         .eq('is_top_100', true)
         .order('market_cap', { ascending: false })

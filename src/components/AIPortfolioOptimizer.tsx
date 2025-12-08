@@ -71,8 +71,8 @@ const AIPortfolioOptimizer = () => {
 
   const fetchHoldings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('portfolio_holdings')
+      const { data, error } = await (supabase
+        .from('portfolio_holdings') as any)
         .select('*')
         .eq('user_id', user?.id);
 
@@ -85,13 +85,13 @@ const AIPortfolioOptimizer = () => {
 
   const fetchPreferences = async () => {
     try {
-      const { data, error } = await supabase
-        .from('user_preferences')
+      const { data, error } = await (supabase
+        .from('user_preferences') as any)
         .select('*')
         .eq('user_id', user?.id)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error) throw error;
       if (data) {
         setPreferences({
           risk_tolerance: data.risk_tolerance || 'moderate',
@@ -125,8 +125,8 @@ const AIPortfolioOptimizer = () => {
         sector: newHolding.sector || null,
       };
 
-      const { error } = await supabase
-        .from('portfolio_holdings')
+      const { error } = await (supabase
+        .from('portfolio_holdings') as any)
         .upsert([holdingData]);
 
       if (error) throw error;
@@ -193,8 +193,8 @@ const AIPortfolioOptimizer = () => {
 
   const updatePreferences = async () => {
     try {
-      const { error } = await supabase
-        .from('user_preferences')
+      const { error } = await (supabase
+        .from('user_preferences') as any)
         .upsert([{
           user_id: user?.id,
           risk_tolerance: preferences.risk_tolerance,

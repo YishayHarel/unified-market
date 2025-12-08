@@ -69,8 +69,8 @@ const SocialFeatures = () => {
 
   const fetchSocialPicks = async () => {
     try {
-      const { data, error } = await supabase
-        .from('social_picks')
+      const { data, error } = await (supabase
+        .from('social_picks') as any)
         .select('*')
         .eq('is_public', true)
         .order('created_at', { ascending: false })
@@ -85,13 +85,13 @@ const SocialFeatures = () => {
 
   const fetchFollowing = async () => {
     try {
-      const { data, error } = await supabase
-        .from('social_follows')
+      const { data, error } = await (supabase
+        .from('social_follows') as any)
         .select('following_id')
         .eq('follower_id', user?.id);
 
       if (error) throw error;
-      setFollowing(data?.map(f => f.following_id) || []);
+      setFollowing(data?.map((f: any) => f.following_id) || []);
     } catch (error) {
       console.error('Error fetching following:', error);
     }
@@ -117,8 +117,8 @@ const SocialFeatures = () => {
         confidence_level: newPick.confidence_level,
       };
 
-      const { error } = await supabase
-        .from('social_picks')
+      const { error } = await (supabase
+        .from('social_picks') as any)
         .insert([pickData]);
 
       if (error) throw error;
@@ -152,18 +152,18 @@ const SocialFeatures = () => {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('profiles')
+      const { data, error } = await (supabase
+        .from('profiles') as any)
         .select('user_id, display_name')
         .ilike('display_name', `%${searchQuery}%`)
         .limit(10);
 
       if (error) throw error;
 
-      const usersWithFollowStatus = data?.map(user => ({
-        ...user,
-        isFollowing: following.includes(user.user_id)
-      })) || [];
+      const usersWithFollowStatus = (data || []).map((u: any) => ({
+        ...u,
+        isFollowing: following.includes(u.user_id)
+      }));
 
       setSearchResults(usersWithFollowStatus);
     } catch (error) {
@@ -181,8 +181,8 @@ const SocialFeatures = () => {
   const toggleFollow = async (userId: string, isCurrentlyFollowing: boolean) => {
     try {
       if (isCurrentlyFollowing) {
-        const { error } = await supabase
-          .from('social_follows')
+        const { error } = await (supabase
+          .from('social_follows') as any)
           .delete()
           .eq('follower_id', user?.id)
           .eq('following_id', userId);
@@ -190,8 +190,8 @@ const SocialFeatures = () => {
         if (error) throw error;
         setFollowing(prev => prev.filter(id => id !== userId));
       } else {
-        const { error } = await supabase
-          .from('social_follows')
+        const { error } = await (supabase
+          .from('social_follows') as any)
           .insert([{
             follower_id: user?.id,
             following_id: userId

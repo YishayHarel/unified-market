@@ -55,8 +55,8 @@ const DividendTracker = () => {
 
   const fetchDividends = async () => {
     try {
-      const { data, error } = await supabase
-        .from("user_dividends")
+      const { data, error } = await (supabase
+        .from("user_dividends") as any)
         .select("*")
         .order("created_at", { ascending: false });
 
@@ -109,8 +109,8 @@ const DividendTracker = () => {
       };
 
       if (editingId) {
-        const { error } = await supabase
-          .from("user_dividends")
+        const { error } = await (supabase
+          .from("user_dividends") as any)
           .update(dividendData)
           .eq("id", editingId);
         
@@ -122,8 +122,8 @@ const DividendTracker = () => {
         });
         setEditingId(null);
       } else {
-        const { error } = await supabase
-          .from("user_dividends")
+        const { error } = await (supabase
+          .from("user_dividends") as any)
           .insert(dividendData);
         
         if (error) throw error;
@@ -161,8 +161,8 @@ const DividendTracker = () => {
 
   const handleDelete = async (id: string, symbol: string) => {
     try {
-      const { error } = await supabase
-        .from("user_dividends")
+      const { error } = await (supabase
+        .from("user_dividends") as any)
         .delete()
         .eq("id", id);
 
