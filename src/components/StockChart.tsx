@@ -22,6 +22,36 @@ interface HoverData {
   x: number;
 }
 
+/**
+ * Gets the most recent market close time (4:00 PM ET)
+ * If market is open, returns today at 4pm ET
+ * If weekend/after hours, returns the last trading day
+ */
+const getMarketCloseTime = (): Date => {
+  const now = new Date();
+  const etOffset = -5; // EST offset (simplified - doesn't account for DST)
+  const utcHours = now.getUTCHours();
+  const etHours = (utcHours + etOffset + 24) % 24;
+  const dayOfWeek = now.getUTCDay();
+  
+  // Create a date object for 4:00 PM ET today
+  const closeTime = new Date(now);
+  closeTime.setUTCHours(16 - etOffset, 0, 0, 0); // 4:00 PM ET = 21:00 UTC (winter)
+  
+  // If it's before market close, use previous trading day
+  if (now < closeTime || dayOfWeek === 0 || dayOfWeek === 6) {
+    // Go back to find last trading day
+    let daysBack = 1;
+    if (dayOfWeek === 0) daysBack = 2; // Sunday -> Friday
+    if (dayOfWeek === 6) daysBack = 1; // Saturday -> Friday
+    if (dayOfWeek === 1 && now < closeTime) daysBack = 3; // Monday before close -> Friday
+    
+    closeTime.setDate(closeTime.getDate() - daysBack);
+  }
+  
+  return closeTime;
+};
+
 const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockChartProps) => {
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,11 +65,14 @@ const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockCh
     setLoading(true);
     
     const generateRealtimeData = (period: string, currentPrice: number) => {
-      const now = new Date();
+      const marketClose = getMarketCloseTime();
       const data: ChartData[] = [];
-      let basePrice = currentPrice || 100; // Fallback if no currentPrice provided
+      let basePrice = currentPrice || 100;
       let points = 50;
       let intervalMinutes = 5;
+      
+      // Market opens at 9:30 AM ET, closes at 4:00 PM ET = 390 minutes of trading
+      const tradingDayMinutes = 390;
       
       switch (period) {
         case '1H':
@@ -56,7 +89,7 @@ const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockCh
           break;
         case '1M':
           points = 22; // ~22 trading days
-          intervalMinutes = 60 * 24; // Daily
+          intervalMinutes = 60 * 24;
           break;
         case '3M':
           points = 66; // ~66 trading days
@@ -72,50 +105,55 @@ const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockCh
           break;
       }
 
-      // More sophisticated price movement starting from actual current price
       const volatility = period === '1H' ? 0.3 : period === '1D' ? 0.8 : 1.2;
       const targetEndPrice = currentPrice || basePrice;
       const totalChange = dayChange || 0;
       
       for (let i = points; i >= 0; i--) {
-        const time = new Date(now);
-        time.setMinutes(time.getMinutes() - (i * intervalMinutes));
+        const time = new Date(marketClose);
+        
+        if (period === '1D' || period === '1H') {
+          // For intraday, work backwards from market close (4:00 PM ET)
+          const minutesFromClose = i * intervalMinutes;
+          time.setMinutes(time.getMinutes() - minutesFromClose);
+          
+          // Don't go before market open (9:30 AM ET)
+          const marketOpen = new Date(marketClose);
+          marketOpen.setHours(marketOpen.getHours() - 6, marketOpen.getMinutes() - 30);
+          if (time < marketOpen) continue;
+        } else {
+          // For multi-day periods, subtract trading days
+          time.setDate(time.getDate() - i);
+        }
 
-        // Calculate price progression to end at currentPrice
+        // Calculate price progression
         const progress = (points - i) / points;
-        const trend = totalChange * progress; // Gradual trend toward final price
+        const trend = totalChange * progress;
         const randomWalk = (Math.random() - 0.5) * volatility;
-        const dayOfWeekEffect = time.getDay() === 1 ? 0.2 : 0; // Monday effect
         
         if (i === 0) {
-          // Final point should be exactly currentPrice
           basePrice = targetEndPrice;
         } else {
-          basePrice = (targetEndPrice - totalChange) + trend + randomWalk + dayOfWeekEffect;
+          basePrice = (targetEndPrice - totalChange) + trend + randomWalk;
         }
         
-        // Ensure reasonable bounds
         basePrice = Math.max(basePrice, targetEndPrice * 0.8);
         basePrice = Math.min(basePrice, targetEndPrice * 1.2);
 
         let formattedTime = '';
         let formattedDate = '';
         
-        if (period === '1H') {
+        if (period === '1H' || period === '1D') {
           formattedTime = time.toLocaleTimeString('en-US', { 
             hour: 'numeric', 
-            minute: '2-digit' 
+            minute: '2-digit',
+            timeZone: 'America/New_York'
           });
           formattedDate = time.toLocaleDateString('en-US', { 
             month: 'short', 
-            day: 'numeric' 
+            day: 'numeric',
+            timeZone: 'America/New_York'
           });
-        } else if (period === '1D') {
-          formattedTime = time.toLocaleTimeString('en-US', { 
-            hour: 'numeric', 
-            minute: '2-digit' 
-          });
-          formattedDate = 'Today';
         } else if (period === '1W' || period === '1M') {
           formattedTime = time.toLocaleDateString('en-US', { 
             month: 'short', 
