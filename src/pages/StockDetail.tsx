@@ -45,11 +45,11 @@ const StockDetail = () => {
         setLoading(true);
         
         // First, get basic stock info from database
-        const { data: stockInfo, error: stockError } = await supabase
-          .from('stocks')
+        const { data: stockInfo, error: stockError } = await (supabase
+          .from('stocks') as any)
           .select('symbol, name, market_cap')
           .eq('symbol', symbol.toUpperCase())
-          .single();
+          .maybeSingle();
         
         if (stockError && stockError.code !== 'PGRST116') {
           console.error('Error fetching stock info:', stockError);

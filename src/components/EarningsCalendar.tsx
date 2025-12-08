@@ -203,8 +203,8 @@ const EarningsCalendar = () => {
         }
 
         // Fallback to database search for less common stocks
-        const { data: stockMatches, error: searchError } = await supabase
-          .from('stocks')
+        const { data: stockMatches, error: searchError } = await (supabase
+          .from('stocks') as any)
           .select('symbol, name, market_cap')
           .or(`symbol.ilike.%${query}%,name.ilike.%${query}%`)
           .not('market_cap', 'is', null) // Prioritize stocks with market cap data

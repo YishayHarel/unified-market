@@ -173,8 +173,8 @@ const StockSearch = () => {
 
     try {
       // Fetch a broader set of results for better ranking
-      const { data: stocks, error } = await supabase
-        .from('stocks')
+      const { data: stocks, error } = await (supabase
+        .from('stocks') as any)
         .select('symbol, name, exchange, market_cap')
         .or(`symbol.ilike.%${query}%,name.ilike.%${query}%`)
         .limit(50); // Get more results to rank properly

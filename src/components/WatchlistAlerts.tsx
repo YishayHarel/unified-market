@@ -40,8 +40,8 @@ const WatchlistAlerts = () => {
 
   const fetchAlerts = async () => {
     try {
-      const { data, error } = await supabase
-        .from('watchlist_alerts')
+      const { data, error } = await (supabase
+        .from('watchlist_alerts') as any)
         .select('*')
         .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
@@ -79,8 +79,8 @@ const WatchlistAlerts = () => {
         message: newAlert.message || null,
       };
 
-      const { error } = await supabase
-        .from('watchlist_alerts')
+      const { error } = await (supabase
+        .from('watchlist_alerts') as any)
         .insert([alertData]);
 
       if (error) throw error;
@@ -105,8 +105,8 @@ const WatchlistAlerts = () => {
 
   const deleteAlert = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from('watchlist_alerts')
+      const { error } = await (supabase
+        .from('watchlist_alerts') as any)
         .delete()
         .eq('id', id);
 
@@ -130,8 +130,8 @@ const WatchlistAlerts = () => {
 
   const toggleAlert = async (id: string, isActive: boolean) => {
     try {
-      const { error } = await supabase
-        .from('watchlist_alerts')
+      const { error } = await (supabase
+        .from('watchlist_alerts') as any)
         .update({ is_active: !isActive })
         .eq('id', id);
 

@@ -14,7 +14,327 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      portfolio_holdings: {
+        Row: {
+          avg_cost: number
+          company_name: string | null
+          created_at: string
+          current_price: number | null
+          id: string
+          sector: string | null
+          shares: number
+          symbol: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avg_cost?: number
+          company_name?: string | null
+          created_at?: string
+          current_price?: number | null
+          id?: string
+          sector?: string | null
+          shares?: number
+          symbol: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avg_cost?: number
+          company_name?: string | null
+          created_at?: string
+          current_price?: number | null
+          id?: string
+          sector?: string | null
+          shares?: number
+          symbol?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      social_follows: {
+        Row: {
+          created_at: string
+          follower_id: string
+          following_id: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          follower_id: string
+          following_id: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          follower_id?: string
+          following_id?: string
+          id?: string
+        }
+        Relationships: []
+      }
+      social_picks: {
+        Row: {
+          confidence_level: number | null
+          created_at: string
+          id: string
+          is_public: boolean
+          likes_count: number
+          pick_type: string
+          reasoning: string | null
+          symbol: string
+          target_price: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          confidence_level?: number | null
+          created_at?: string
+          id?: string
+          is_public?: boolean
+          likes_count?: number
+          pick_type: string
+          reasoning?: string | null
+          symbol: string
+          target_price?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          confidence_level?: number | null
+          created_at?: string
+          id?: string
+          is_public?: boolean
+          likes_count?: number
+          pick_type?: string
+          reasoning?: string | null
+          symbol?: string
+          target_price?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      stocks: {
+        Row: {
+          avg_volume: number | null
+          created_at: string
+          exchange: string
+          id: number
+          is_top_100: boolean | null
+          last_ranked_at: string | null
+          last_return_1d: number | null
+          market_cap: number | null
+          name: string
+          rank_score: number | null
+          rel_volume: number | null
+          symbol: string
+          trending_score: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          avg_volume?: number | null
+          created_at?: string
+          exchange: string
+          id?: number
+          is_top_100?: boolean | null
+          last_ranked_at?: string | null
+          last_return_1d?: number | null
+          market_cap?: number | null
+          name: string
+          rank_score?: number | null
+          rel_volume?: number | null
+          symbol: string
+          trending_score?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          avg_volume?: number | null
+          created_at?: string
+          exchange?: string
+          id?: number
+          is_top_100?: boolean | null
+          last_ranked_at?: string | null
+          last_return_1d?: number | null
+          market_cap?: number | null
+          name?: string
+          rank_score?: number | null
+          rel_volume?: number | null
+          symbol?: string
+          trending_score?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      user_dividends: {
+        Row: {
+          company: string
+          created_at: string
+          dividend_per_share: number
+          frequency: number
+          id: string
+          next_pay_date: string | null
+          shares: number
+          symbol: string
+          updated_at: string
+          user_id: string
+          yield_percentage: number | null
+        }
+        Insert: {
+          company: string
+          created_at?: string
+          dividend_per_share?: number
+          frequency?: number
+          id?: string
+          next_pay_date?: string | null
+          shares?: number
+          symbol: string
+          updated_at?: string
+          user_id: string
+          yield_percentage?: number | null
+        }
+        Update: {
+          company?: string
+          created_at?: string
+          dividend_per_share?: number
+          frequency?: number
+          id?: string
+          next_pay_date?: string | null
+          shares?: number
+          symbol?: string
+          updated_at?: string
+          user_id?: string
+          yield_percentage?: number | null
+        }
+        Relationships: []
+      }
+      user_preferences: {
+        Row: {
+          created_at: string
+          id: string
+          investment_goals: string[] | null
+          max_position_size: number | null
+          preferred_sectors: string[] | null
+          rebalance_threshold: number | null
+          risk_tolerance: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          investment_goals?: string[] | null
+          max_position_size?: number | null
+          preferred_sectors?: string[] | null
+          rebalance_threshold?: number | null
+          risk_tolerance?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          investment_goals?: string[] | null
+          max_position_size?: number | null
+          preferred_sectors?: string[] | null
+          rebalance_threshold?: number | null
+          risk_tolerance?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_saved_stocks: {
+        Row: {
+          id: string
+          name: string | null
+          saved_at: string
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          name?: string | null
+          saved_at?: string
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          name?: string | null
+          saved_at?: string
+          symbol?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      watchlist_alerts: {
+        Row: {
+          alert_type: string
+          created_at: string
+          id: string
+          is_active: boolean
+          message: string | null
+          symbol: string
+          target_price: number | null
+          triggered_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alert_type: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          message?: string | null
+          symbol: string
+          target_price?: number | null
+          triggered_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alert_type?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          message?: string | null
+          symbol?: string
+          target_price?: number | null
+          triggered_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
