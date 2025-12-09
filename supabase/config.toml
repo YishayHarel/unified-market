@@ -15,5 +15,8 @@ verify_jwt = false
 [functions.update-top-100]
 verify_jwt = false
 
+[functions.update-stock-prices]
+verify_jwt = false
+
 [functions.ai-stock-advisor]
 verify_jwt = true
