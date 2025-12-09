@@ -88,14 +88,47 @@ serve(async (req) => {
 
     console.log('User authenticated:', userData.user.email);
 
-    console.log('User authenticated, proceeding with free AI access');
+    // Check daily usage limit using database function (0 = disabled)
+    const DAILY_LIMIT = 0; // Set to 0 to block all AI calls
+    
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      { auth: { persistSession: false } }
+    );
 
-    // Rate limiting: 10 requests per minute per user
+    const { data: usageAllowed, error: usageError } = await supabaseAdmin.rpc(
+      'check_ai_usage',
+      { p_user_id: userData.user.id, p_daily_limit: DAILY_LIMIT }
+    );
+
+    if (usageError) {
+      console.error('Usage check error:', usageError);
+      throw new Error("Failed to check usage limits");
+    }
+
+    if (!usageAllowed) {
+      console.log('User exceeded daily AI usage limit');
+      return new Response(
+        JSON.stringify({ 
+          error: "You've reached your daily AI usage limit. Please try again tomorrow.",
+          limitReached: true
+        }), 
+        { 
+          status: 429, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    console.log('Usage check passed, proceeding with AI call');
+
+    // Rate limiting: 10 requests per minute per user (burst protection)
     const rateLimit = checkRateLimit(`ai_advisor_${userData.user.id}`, 10, 60 * 1000);
     if (!rateLimit.allowed) {
       return new Response(
         JSON.stringify({ 
-          error: "Rate limit exceeded. Please try again later.",
+          error: "Too many requests. Please slow down.",
           resetTime: rateLimit.resetTime 
         }), 
         { 
