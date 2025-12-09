@@ -7,7 +7,7 @@ const corsHeaders = {
 
 // Simple in-memory cache with TTL (survives across requests in the same instance)
 const priceCache = new Map<string, { data: any; expiry: number }>();
-const CACHE_TTL_MS = 30 * 1000; // 30 seconds cache
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache (increased from 30s to reduce API calls)
 
 /**
  * Get cached price data or null if expired/missing
