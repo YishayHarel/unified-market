@@ -1,12 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Plus, Search } from "lucide-react";
+import { Trash2, Plus, Search, TrendingUp, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useStockPrices } from "@/hooks/useStockPrices";
 
 interface SavedStock {
   id: string;
@@ -18,6 +20,7 @@ interface SavedStock {
 const UserSavedStocks = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [savedStocks, setSavedStocks] = useState<SavedStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchSymbol, setSearchSymbol] = useState("");
@@ -50,6 +53,10 @@ const UserSavedStocks = () => {
     }
   };
 
+  // Smart price fetching - only fetch prices for saved stocks
+  const symbolsToFetch = useMemo(() => savedStocks.map(s => s.symbol), [savedStocks]);
+  const { prices, loading: pricesLoading } = useStockPrices(symbolsToFetch);
+
   const addStock = async () => {
     if (!searchSymbol.trim()) return;
     
@@ -60,11 +67,11 @@ const UserSavedStocks = () => {
         .insert({
           user_id: user!.id,
           symbol: searchSymbol.toUpperCase(),
-          name: searchSymbol.toUpperCase(), // You could enhance this by fetching company name
+          name: searchSymbol.toUpperCase(),
         });
 
       if (error) {
-        if (error.code === "23505") { // Unique constraint violation
+        if (error.code === "23505") {
           toast({
             title: "Already saved",
             description: "This stock is already in your saved list",
@@ -93,7 +100,8 @@ const UserSavedStocks = () => {
     }
   };
 
-  const removeStock = async (stockId: string, symbol: string) => {
+  const removeStock = async (e: React.MouseEvent, stockId: string, symbol: string) => {
+    e.stopPropagation();
     try {
       const { error } = await (supabase
         .from("user_saved_stocks") as any)
@@ -160,28 +168,47 @@ const UserSavedStocks = () => {
           </div>
         ) : (
           <div className="space-y-2">
-            {savedStocks.map((stock) => (
-              <div
-                key={stock.id}
-                className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-              >
-                <div>
-                  <Badge variant="secondary" className="mr-2">
-                    {stock.symbol}
-                  </Badge>
-                  <span className="text-sm text-muted-foreground">
-                    Saved {new Date(stock.saved_at).toLocaleDateString()}
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeStock(stock.id, stock.symbol)}
+            {savedStocks.map((stock) => {
+              const priceData = prices.get(stock.symbol);
+              const hasPrice = priceData && priceData.price > 0;
+              const isPositive = priceData && priceData.changePercent >= 0;
+
+              return (
+                <div
+                  key={stock.id}
+                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
+                  onClick={() => navigate(`/stock/${stock.symbol}`)}
                 >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            ))}
+                  <div className="flex items-center gap-3">
+                    <Badge variant="secondary">
+                      {stock.symbol}
+                    </Badge>
+                    {hasPrice ? (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">${priceData.price.toFixed(2)}</span>
+                        <span className={`flex items-center text-sm ${isPositive ? 'text-primary' : 'text-destructive'}`}>
+                          {isPositive ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
+                          {isPositive ? '+' : ''}{priceData.changePercent.toFixed(2)}%
+                        </span>
+                      </div>
+                    ) : pricesLoading ? (
+                      <span className="text-sm text-muted-foreground">Loading...</span>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        Saved {new Date(stock.saved_at).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => removeStock(e, stock.id, stock.symbol)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              );
+            })}
           </div>
         )}
       </CardContent>
