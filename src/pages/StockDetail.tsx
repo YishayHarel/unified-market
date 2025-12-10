@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, TrendingUp, TrendingDown, Star, Eye, Plus } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Star, Eye, Plus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import StockNews from "@/components/StockNews";
 import AnalystRatings from "@/components/AnalystRatings";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface StockData {
   symbol: string;
@@ -31,11 +32,82 @@ interface StockData {
 const StockDetail = () => {
   const { symbol } = useParams<{ symbol: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [stockData, setStockData] = useState<StockData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState("1D");
+  const [isWatched, setIsWatched] = useState(false);
+  const [watchLoading, setWatchLoading] = useState(false);
 
   const periods = ["1H", "1D", "1W", "1M", "3M", "1Y", "MAX"];
+
+  // Check if stock is already in user's saved stocks
+  useEffect(() => {
+    const checkWatchStatus = async () => {
+      if (!user || !symbol) return;
+      
+      const { data } = await (supabase
+        .from('user_saved_stocks') as any)
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('symbol', symbol.toUpperCase())
+        .maybeSingle();
+      
+      setIsWatched(!!data);
+    };
+    
+    checkWatchStatus();
+  }, [user, symbol]);
+
+  // Handle Watch button click
+  const handleWatch = async () => {
+    if (!user) {
+      toast.error('Please sign in to add stocks to your watchlist');
+      navigate('/auth');
+      return;
+    }
+    
+    if (!symbol) return;
+    
+    setWatchLoading(true);
+    try {
+      if (isWatched) {
+        // Remove from watchlist
+        const { error } = await (supabase
+          .from('user_saved_stocks') as any)
+          .delete()
+          .eq('user_id', user.id)
+          .eq('symbol', symbol.toUpperCase());
+        
+        if (error) throw error;
+        setIsWatched(false);
+        toast.success(`${symbol.toUpperCase()} removed from watchlist`);
+      } else {
+        // Add to watchlist
+        const { error } = await (supabase
+          .from('user_saved_stocks') as any)
+          .insert({
+            user_id: user.id,
+            symbol: symbol.toUpperCase(),
+            name: stockData?.name || symbol.toUpperCase()
+          });
+        
+        if (error) throw error;
+        setIsWatched(true);
+        toast.success(`${symbol.toUpperCase()} added to watchlist`);
+      }
+    } catch (error) {
+      console.error('Error updating watchlist:', error);
+      toast.error('Failed to update watchlist');
+    } finally {
+      setWatchLoading(false);
+    }
+  };
+
+  // Handle Buy button click
+  const handleBuy = () => {
+    toast.info('Trading functionality coming soon! Connect your brokerage to enable trading.');
+  };
 
   useEffect(() => {
     if (!symbol) return;
@@ -230,11 +302,20 @@ const StockDetail = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm">
-              <Eye className="w-4 h-4 mr-2" />
-              Watch
+            <Button 
+              variant={isWatched ? "default" : "outline"} 
+              size="sm"
+              onClick={handleWatch}
+              disabled={watchLoading}
+            >
+              {isWatched ? (
+                <Check className="w-4 h-4 mr-2" />
+              ) : (
+                <Eye className="w-4 h-4 mr-2" />
+              )}
+              {isWatched ? 'Watching' : 'Watch'}
             </Button>
-            <Button size="sm">
+            <Button size="sm" onClick={handleBuy}>
               <Plus className="w-4 h-4 mr-2" />
               Buy
             </Button>
