@@ -81,7 +81,7 @@ serve(async (req) => {
     console.log(`NewsAPI returned ${data.articles?.length || 0} articles`)
     
     // Filter out articles with [Removed] content or missing essential data
-    const filteredArticles = (data.articles || []).filter((article: any) => {
+    const validArticles = (data.articles || []).filter((article: any) => {
       return article.title && 
              article.title !== '[Removed]' && 
              article.description && 
@@ -89,11 +89,29 @@ serve(async (req) => {
              article.url;
     });
     
-    console.log(`Filtered to ${filteredArticles.length} valid articles`)
+    // Deduplicate articles by similar titles (removes near-duplicates from different sources)
+    const seenTitles = new Set<string>();
+    const deduplicatedArticles = validArticles.filter((article: any) => {
+      // Normalize title: lowercase, remove punctuation, extra spaces
+      const normalizedTitle = article.title
+        .toLowerCase()
+        .replace(/[^\w\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 50); // Compare first 50 chars to catch similar headlines
+      
+      if (seenTitles.has(normalizedTitle)) {
+        return false;
+      }
+      seenTitles.add(normalizedTitle);
+      return true;
+    });
+    
+    console.log(`Filtered ${validArticles.length} valid articles, deduplicated to ${deduplicatedArticles.length}`)
     
     return new Response(
-      JSON.stringify({ ...data, articles: filteredArticles }),
-      { 
+      JSON.stringify({ ...data, articles: deduplicatedArticles }),
+      {
         headers: { 
           ...corsHeaders, 
           'Content-Type': 'application/json',
