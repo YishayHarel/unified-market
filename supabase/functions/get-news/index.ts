@@ -5,24 +5,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Keywords that indicate irrelevant content
-const IRRELEVANT_KEYWORDS = [
-  'sports', 'nfl', 'nba', 'mlb', 'nhl', 'golf', 'tennis', 'soccer', 'football',
-  'celebrity', 'entertainment', 'movie', 'tv show', 'netflix', 'streaming',
-  'recipe', 'cooking', 'weather', 'horoscope', 'kardashian', 'reality tv',
-  'wwe', 'wrestling', 'ufc', 'mma', 'boxing', 'esports', 'gaming'
-];
-
-// Keywords that indicate relevant financial content
-const RELEVANT_KEYWORDS = [
-  'stock', 'share', 'market', 'invest', 'trading', 'earnings', 'revenue',
-  'profit', 'loss', 'dividend', 'ipo', 'merger', 'acquisition', 'ceo',
-  'nasdaq', 'dow', 's&p', 'nyse', 'fed', 'interest rate', 'inflation',
-  'gdp', 'economy', 'fiscal', 'monetary', 'bond', 'treasury', 'etf',
-  'crypto', 'bitcoin', 'hedge fund', 'wall street', 'analyst', 'upgrade',
-  'downgrade', 'rating', 'forecast', 'guidance', 'quarter', 'annual'
-];
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -40,46 +22,35 @@ serve(async (req) => {
     }
     
     const { 
-      pageSize = 30,
+      pageSize = 20,
       symbol,
       companyName 
     } = requestBody
     
     console.log(`Fetching news: symbol=${symbol}, companyName=${companyName}, pageSize=${pageSize}`)
     
-    const newsApiKey = Deno.env.get('NEWS_API_KEY')
-    if (!newsApiKey) {
-      console.error('NEWS_API_KEY not found in environment')
-      throw new Error('NEWS_API_KEY not found')
+    const finnhubKey = Deno.env.get('FINNHUB_API_KEY')
+    if (!finnhubKey) {
+      console.error('FINNHUB_API_KEY not found in environment')
+      throw new Error('FINNHUB_API_KEY not found')
     }
 
-    // Get news from last 24 hours only
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const fromDate = yesterday.toISOString().split('T')[0];
-
-    // Build search query based on whether we have a specific stock or general news
-    let searchQuery: string;
+    let url: string;
     
     if (symbol) {
-      // Stock-specific search
-      const companySearch = companyName 
-        ? `"${companyName}" OR "${symbol}"` 
-        : `"${symbol}"`;
-      searchQuery = `${companySearch}`;
-      console.log(`Stock-specific search query: ${searchQuery}`);
+      // Stock-specific news
+      const today = new Date();
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const fromDate = weekAgo.toISOString().split('T')[0];
+      const toDate = today.toISOString().split('T')[0];
+      
+      url = `https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${fromDate}&to=${toDate}&token=${finnhubKey}`;
+      console.log(`Fetching company news for ${symbol}`);
     } else {
-      // General financial news - focused keywords
-      searchQuery = '"stock market" OR "wall street" OR nasdaq OR "dow jones" OR "s&p 500" OR earnings OR "interest rate" OR "federal reserve"';
-      console.log('General financial news search');
+      // General market news
+      url = `https://finnhub.io/api/v1/news?category=general&token=${finnhubKey}`;
+      console.log('Fetching general market news');
     }
-
-    const encodedQuery = encodeURIComponent(searchQuery);
-    // Request more articles so we have buffer after filtering
-    const requestSize = Math.min(pageSize * 2, 100);
-    const url = `https://newsapi.org/v2/everything?q=${encodedQuery}&language=en&sortBy=publishedAt&from=${fromDate}&pageSize=${requestSize}&apiKey=${newsApiKey}`;
-    
-    console.log(`Calling NewsAPI with from=${fromDate}...`);
     
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 8000)
@@ -91,47 +62,33 @@ serve(async (req) => {
       }
     })
     clearTimeout(timeoutId)
-    console.log(`NewsAPI response status: ${response.status}`)
+    console.log(`Finnhub response status: ${response.status}`)
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error(`NewsAPI error: ${response.status} - ${errorText}`)
-      throw new Error(`NewsAPI error: ${response.status}`)
+      console.error(`Finnhub error: ${response.status} - ${errorText}`)
+      throw new Error(`Finnhub error: ${response.status}`)
     }
 
     const data = await response.json()
-    console.log(`NewsAPI returned ${data.articles?.length || 0} articles`)
+    console.log(`Finnhub returned ${Array.isArray(data) ? data.length : 0} articles`)
     
-    // Filter out invalid articles
-    const validArticles = (data.articles || []).filter((article: any) => {
-      if (!article.title || article.title === '[Removed]') return false;
-      if (!article.description || article.description === '[Removed]') return false;
-      if (!article.url) return false;
-      return true;
-    });
-    
-    // Filter for relevance - remove irrelevant topics
-    const relevantArticles = validArticles.filter((article: any) => {
-      const text = `${article.title} ${article.description}`.toLowerCase();
-      
-      // Check for irrelevant keywords
-      const hasIrrelevant = IRRELEVANT_KEYWORDS.some(keyword => text.includes(keyword));
-      if (hasIrrelevant) return false;
-      
-      // For general news (not stock-specific), require at least one relevant keyword
-      if (!symbol) {
-        const hasRelevant = RELEVANT_KEYWORDS.some(keyword => text.includes(keyword));
-        if (!hasRelevant) return false;
-      }
-      
-      return true;
-    });
-    
-    console.log(`Filtered to ${relevantArticles.length} relevant articles`);
+    // Transform Finnhub format to match our frontend expected format
+    const articles = (Array.isArray(data) ? data : [])
+      .filter((article: any) => article.headline && article.url)
+      .slice(0, pageSize)
+      .map((article: any) => ({
+        title: article.headline,
+        description: article.summary || article.headline,
+        source: { name: article.source || 'Finnhub' },
+        publishedAt: new Date(article.datetime * 1000).toISOString(),
+        url: article.url,
+        urlToImage: article.image || null
+      }));
     
     // Deduplicate by similar titles
     const seenTitles = new Set<string>();
-    const deduplicatedArticles = relevantArticles.filter((article: any) => {
+    const deduplicatedArticles = articles.filter((article: any) => {
       const normalizedTitle = article.title
         .toLowerCase()
         .replace(/[^\w\s]/g, '')
@@ -146,18 +103,15 @@ serve(async (req) => {
       return true;
     });
     
-    // Limit to requested page size
-    const finalArticles = deduplicatedArticles.slice(0, pageSize);
-    
-    console.log(`Final: ${finalArticles.length} articles after dedup and limit`)
+    console.log(`Final: ${deduplicatedArticles.length} articles after processing`)
     
     return new Response(
-      JSON.stringify({ ...data, articles: finalArticles }),
+      JSON.stringify({ articles: deduplicatedArticles, status: 'ok' }),
       { 
         headers: { 
           ...corsHeaders, 
           'Content-Type': 'application/json',
-          'Cache-Control': 'max-age=180' // 3 minute cache for fresher news
+          'Cache-Control': 'max-age=120' // 2 minute cache for fresh news
         },
         status: 200,
       },
