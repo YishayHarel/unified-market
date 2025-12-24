@@ -414,7 +414,7 @@ const StockDetail = () => {
 
           {/* Right Column - News */}
           <div className="lg:col-span-2">
-            <StockNews symbol={stockData.symbol} />
+            <StockNews symbol={stockData.symbol} companyName={stockData.name} />
           </div>
         </div>
       </div>
