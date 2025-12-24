@@ -21,8 +21,15 @@ serve(async (req) => {
       requestBody = {}
     }
     
-    const { category = 'business', country = 'us', pageSize = 20 } = requestBody
-    console.log(`Fetching news: category=${category}, country=${country}, pageSize=${pageSize}`)
+    const { 
+      category = 'business', 
+      country = 'us', 
+      pageSize = 20,
+      symbol,
+      companyName 
+    } = requestBody
+    
+    console.log(`Fetching news: symbol=${symbol}, companyName=${companyName}, pageSize=${pageSize}`)
     
     const newsApiKey = Deno.env.get('NEWS_API_KEY')
     if (!newsApiKey) {
@@ -30,13 +37,30 @@ serve(async (req) => {
       throw new Error('NEWS_API_KEY not found')
     }
 
-    // Use everything endpoint for more recent news
-    const url = `https://newsapi.org/v2/everything?q=(stocks OR finance OR market OR business)&language=en&sortBy=publishedAt&pageSize=${pageSize}&apiKey=${newsApiKey}`
-    console.log('Calling NewsAPI for recent business/finance news...')
+    // Build search query based on whether we have a specific stock or general news
+    let searchQuery: string;
+    
+    if (symbol) {
+      // Stock-specific search - include symbol and company name for better results
+      const companySearch = companyName 
+        ? `"${companyName}" OR ${symbol}` 
+        : symbol;
+      searchQuery = `(${companySearch}) AND (stock OR shares OR trading OR earnings OR market)`;
+      console.log(`Stock-specific search query: ${searchQuery}`);
+    } else {
+      // General financial news
+      searchQuery = '(stocks OR finance OR market OR "stock market" OR trading OR investing)';
+      console.log('General financial news search');
+    }
+
+    const encodedQuery = encodeURIComponent(searchQuery);
+    const url = `https://newsapi.org/v2/everything?q=${encodedQuery}&language=en&sortBy=publishedAt&pageSize=${pageSize}&apiKey=${newsApiKey}`;
+    
+    console.log('Calling NewsAPI...');
     
     // Add timeout to prevent edge function timeout
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
     
     const response = await fetch(url, { 
       signal: controller.signal,
@@ -56,13 +80,24 @@ serve(async (req) => {
     const data = await response.json()
     console.log(`NewsAPI returned ${data.articles?.length || 0} articles`)
     
+    // Filter out articles with [Removed] content or missing essential data
+    const filteredArticles = (data.articles || []).filter((article: any) => {
+      return article.title && 
+             article.title !== '[Removed]' && 
+             article.description && 
+             article.description !== '[Removed]' &&
+             article.url;
+    });
+    
+    console.log(`Filtered to ${filteredArticles.length} valid articles`)
+    
     return new Response(
-      JSON.stringify(data),
+      JSON.stringify({ ...data, articles: filteredArticles }),
       { 
         headers: { 
           ...corsHeaders, 
           'Content-Type': 'application/json',
-          'Cache-Control': 'max-age=300' // Cache for 5 minutes only
+          'Cache-Control': 'max-age=300'
         },
         status: 200,
       },
@@ -70,7 +105,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in get-news function:', error.message)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error.message, articles: [] }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500,
