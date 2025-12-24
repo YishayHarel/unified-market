@@ -1,7 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { useStockPrices, StockPrice } from "@/hooks/useStockPrices";
 
 interface StockData {
   symbol: string;
@@ -63,11 +62,7 @@ const TopMovers = () => {
     fetchTopMovers();
   }, []);
 
-  // Only fetch prices for the 3 stocks we're displaying
-  const symbolsToFetch = useMemo(() => topStocks.map(s => s.symbol), [topStocks]);
-  const { prices, loading: pricesLoading } = useStockPrices(symbolsToFetch);
-
-  const isLoading = loading || (topStocks.length > 0 && pricesLoading && prices.size === 0);
+  const isLoading = loading;
 
   if (isLoading) {
     return (
@@ -99,9 +94,8 @@ const TopMovers = () => {
       <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {topStocks.map((stock) => {
-          const priceData = prices.get(stock.symbol);
-          const price = priceData?.price || 0;
-          const changePercent = priceData?.changePercent ?? (stock.last_return_1d ? stock.last_return_1d * 100 : 0);
+          // Use the accurate percentage from the database (last_return_1d is a decimal, e.g., 0.05 = 5%)
+          const changePercent = stock.last_return_1d ? stock.last_return_1d * 100 : 0;
           const positive = changePercent >= 0;
 
           return (
@@ -122,11 +116,8 @@ const TopMovers = () => {
                 </div>
               </div>
               
-              <div className="flex justify-between items-center">
-                <div className="font-bold">
-                  {price > 0 ? `$${price.toFixed(2)}` : '—'}
-                </div>
-                <div className={positive ? "text-primary" : "text-destructive"}>
+              <div className="flex justify-end items-center">
+                <div className={`text-lg font-semibold ${positive ? "text-primary" : "text-destructive"}`}>
                   {`${positive ? "+" : ""}${changePercent.toFixed(2)}%`}
                 </div>
               </div>
