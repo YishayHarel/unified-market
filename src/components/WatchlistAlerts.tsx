@@ -6,8 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Bell, Plus, Trash2, TrendingUp, TrendingDown } from "lucide-react";
+import { Bell, Plus, Trash2, TrendingUp, TrendingDown, Activity, Percent, Calendar, DollarSign } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 interface Alert {
   id: string;
@@ -31,6 +32,7 @@ const WatchlistAlerts = () => {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { isEnabled: notificationsEnabled, requestPermission } = usePushNotifications();
 
   useEffect(() => {
     if (user) {
@@ -61,10 +63,20 @@ const WatchlistAlerts = () => {
   };
 
   const addAlert = async () => {
-    if (!newAlert.symbol || (!newAlert.target_price && newAlert.alert_type.includes('price'))) {
+    if (!newAlert.symbol) {
       toast({
         title: "Error",
-        description: "Please fill in all required fields",
+        description: "Please enter a stock symbol",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const requiresTargetPrice = ['price_above', 'price_below', 'percent_up', 'percent_down', 'volume_spike'].includes(newAlert.alert_type);
+    if (requiresTargetPrice && !newAlert.target_price) {
+      toast({
+        title: "Error",
+        description: "Please enter a target value",
         variant: "destructive",
       });
       return;
@@ -75,7 +87,7 @@ const WatchlistAlerts = () => {
         user_id: user?.id,
         symbol: newAlert.symbol.toUpperCase(),
         alert_type: newAlert.alert_type,
-        target_price: newAlert.alert_type.includes('price') ? parseFloat(newAlert.target_price) : null,
+        target_price: requiresTargetPrice ? parseFloat(newAlert.target_price) : null,
         message: newAlert.message || null,
       };
 
@@ -89,6 +101,11 @@ const WatchlistAlerts = () => {
         title: "Success",
         description: "Alert added successfully",
       });
+
+      // Prompt for notification permission if not enabled
+      if (!notificationsEnabled) {
+        requestPermission();
+      }
 
       setNewAlert({ symbol: '', alert_type: 'price_above', target_price: '', message: '' });
       setShowAddForm(false);
@@ -154,6 +171,16 @@ const WatchlistAlerts = () => {
         return <TrendingUp className="h-4 w-4 text-green-500" />;
       case 'price_below':
         return <TrendingDown className="h-4 w-4 text-red-500" />;
+      case 'percent_up':
+        return <Percent className="h-4 w-4 text-green-500" />;
+      case 'percent_down':
+        return <Percent className="h-4 w-4 text-red-500" />;
+      case 'volume_spike':
+        return <Activity className="h-4 w-4 text-orange-500" />;
+      case 'earnings':
+        return <Calendar className="h-4 w-4 text-blue-500" />;
+      case 'dividend':
+        return <DollarSign className="h-4 w-4 text-purple-500" />;
       default:
         return <Bell className="h-4 w-4 text-blue-500" />;
     }
@@ -165,6 +192,12 @@ const WatchlistAlerts = () => {
         return 'Price Above';
       case 'price_below':
         return 'Price Below';
+      case 'percent_up':
+        return '% Gain';
+      case 'percent_down':
+        return '% Drop';
+      case 'volume_spike':
+        return 'Volume Spike';
       case 'earnings':
         return 'Earnings Date';
       case 'dividend':
@@ -172,6 +205,41 @@ const WatchlistAlerts = () => {
       default:
         return alertType;
     }
+  };
+
+  const getTargetLabel = (alertType: string) => {
+    switch (alertType) {
+      case 'price_above':
+      case 'price_below':
+        return 'Target Price ($)';
+      case 'percent_up':
+      case 'percent_down':
+        return 'Percentage (%)';
+      case 'volume_spike':
+        return 'Volume Multiplier (e.g., 2 = 2x normal)';
+      default:
+        return 'Target Value';
+    }
+  };
+
+  const formatTargetValue = (alertType: string, value?: number) => {
+    if (!value) return '';
+    switch (alertType) {
+      case 'price_above':
+      case 'price_below':
+        return `$${value}`;
+      case 'percent_up':
+      case 'percent_down':
+        return `${value}%`;
+      case 'volume_spike':
+        return `${value}x volume`;
+      default:
+        return value.toString();
+    }
+  };
+
+  const requiresTargetInput = (alertType: string) => {
+    return ['price_above', 'price_below', 'percent_up', 'percent_down', 'volume_spike'].includes(alertType);
   };
 
   if (!user) {
@@ -218,7 +286,7 @@ const WatchlistAlerts = () => {
                   <Label htmlFor="alert-type">Alert Type</Label>
                   <Select
                     value={newAlert.alert_type}
-                    onValueChange={(value) => setNewAlert({ ...newAlert, alert_type: value })}
+                    onValueChange={(value) => setNewAlert({ ...newAlert, alert_type: value, target_price: '' })}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -226,6 +294,9 @@ const WatchlistAlerts = () => {
                     <SelectContent>
                       <SelectItem value="price_above">Price Above</SelectItem>
                       <SelectItem value="price_below">Price Below</SelectItem>
+                      <SelectItem value="percent_up">% Gain (Daily)</SelectItem>
+                      <SelectItem value="percent_down">% Drop (Daily)</SelectItem>
+                      <SelectItem value="volume_spike">Volume Spike</SelectItem>
                       <SelectItem value="earnings">Earnings Date</SelectItem>
                       <SelectItem value="dividend">Dividend Date</SelectItem>
                     </SelectContent>
@@ -233,14 +304,14 @@ const WatchlistAlerts = () => {
                 </div>
               </div>
               
-              {newAlert.alert_type.includes('price') && (
+              {requiresTargetInput(newAlert.alert_type) && (
                 <div>
-                  <Label htmlFor="target-price">Target Price</Label>
+                  <Label htmlFor="target-price">{getTargetLabel(newAlert.alert_type)}</Label>
                   <Input
                     id="target-price"
                     type="number"
                     step="0.01"
-                    placeholder="150.00"
+                    placeholder={newAlert.alert_type === 'volume_spike' ? '2' : '150.00'}
                     value={newAlert.target_price}
                     onChange={(e) => setNewAlert({ ...newAlert, target_price: e.target.value })}
                   />
@@ -291,7 +362,7 @@ const WatchlistAlerts = () => {
                         <div className="font-semibold">{alert.symbol}</div>
                         <div className="text-sm text-muted-foreground">
                           {getAlertTypeLabel(alert.alert_type)}
-                          {alert.target_price && ` $${alert.target_price}`}
+                          {alert.target_price && ` ${formatTargetValue(alert.alert_type, alert.target_price)}`}
                         </div>
                         {alert.message && (
                           <div className="text-xs text-muted-foreground mt-1">
