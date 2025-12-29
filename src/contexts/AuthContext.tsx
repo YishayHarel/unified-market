@@ -55,7 +55,19 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    // Return a safe default during initial render before provider mounts
+    console.warn('useAuth called outside AuthProvider, returning default state');
+    return {
+      user: null,
+      session: null,
+      loading: true,
+      subscription: { subscribed: false, tier: null, subscriptionEnd: null, aiCallsLimit: 0 },
+      subscriptionLoading: false,
+      signUp: async () => ({ error: new Error('Auth not initialized') }),
+      signIn: async () => ({ error: new Error('Auth not initialized') }),
+      signOut: async () => {},
+      checkSubscription: async () => {},
+    } as AuthContextType;
   }
   return context;
 }
