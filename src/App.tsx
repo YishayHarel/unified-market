@@ -16,6 +16,7 @@ import News from "./pages/News";
 import Markets from "./pages/Markets";
 import YishAI from "./pages/YishAI";
 import Subscription from "./pages/Subscription";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import BottomNavigation from "./components/BottomNavigation";
 import PerformanceMonitor from "./components/PerformanceMonitor";
@@ -52,6 +53,7 @@ const AppContent = () => {
               <Route path="/markets" element={<Markets />} />
               <Route path="/yishai" element={<YishAI />} />
               <Route path="/subscription" element={<Subscription />} />
+              <Route path="/settings" element={<Settings />} />
               <Route path="/stock/:symbol" element={<StockDetail />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
