@@ -18,14 +18,14 @@ export const useAlertChecker = () => {
   const { user } = useAuth();
   const { sendNotification, isEnabled: notificationsEnabled } = usePushNotifications();
   const { toast } = useToast();
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const intervalRef = useRef<number | null>(null);
   const lastCheckRef = useRef<number>(0);
   const notifiedAlertsRef = useRef<Set<string>>(new Set());
 
   const checkAlerts = useCallback(async () => {
     if (!user) return;
 
-    // Prevent checking too frequently
     const now = Date.now();
     if (now - lastCheckRef.current < CHECK_INTERVAL_MS - 5000) {
       return;
@@ -51,37 +51,32 @@ export const useAlertChecker = () => {
         return;
       }
 
-      const { alerts, checkTime } = response.data as { alerts: SmartAlert[]; checkTime: number };
+      const { alerts } = response.data as { alerts: SmartAlert[] };
 
       if (alerts && alerts.length > 0) {
         console.log(`Received ${alerts.length} alerts`);
         
         for (const alert of alerts) {
-          // Create a unique key for this alert to prevent duplicates
           const alertKey = `${alert.type}-${alert.symbol || 'market'}-${alert.message.slice(0, 30)}`;
           
-          // Skip if we've already shown this alert in this session
           if (notifiedAlertsRef.current.has(alertKey)) {
             continue;
           }
           notifiedAlertsRef.current.add(alertKey);
           
-          // Limit the set size to prevent memory issues
           if (notifiedAlertsRef.current.size > 100) {
             const firstKey = notifiedAlertsRef.current.values().next().value;
             if (firstKey) notifiedAlertsRef.current.delete(firstKey);
           }
 
-          // Show browser notification if enabled
           if (notificationsEnabled) {
             sendNotification(alert.title, {
               body: alert.message,
               tag: alertKey,
-              requireInteraction: alert.type === 'market_news', // Major news requires interaction
+              requireInteraction: alert.type === 'market_news',
             });
           }
 
-          // Show in-app toast with appropriate styling
           toast({
             title: alert.title,
             description: alert.message,
@@ -97,26 +92,23 @@ export const useAlertChecker = () => {
   useEffect(() => {
     if (!user) {
       if (intervalRef.current) {
-        clearInterval(intervalRef.current);
+        window.clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-      // Clear notified alerts on logout
       notifiedAlertsRef.current.clear();
       return;
     }
 
-    // Initial check after login (with delay to let app load)
-    const initialTimeout = setTimeout(() => {
+    const initialTimeout = window.setTimeout(() => {
       checkAlerts();
-    }, 10000); // 10 second delay
+    }, 10000);
 
-    // Set up interval for regular checks
-    intervalRef.current = setInterval(checkAlerts, CHECK_INTERVAL_MS);
+    intervalRef.current = window.setInterval(checkAlerts, CHECK_INTERVAL_MS);
 
     return () => {
-      clearTimeout(initialTimeout);
+      window.clearTimeout(initialTimeout);
       if (intervalRef.current) {
-        clearInterval(intervalRef.current);
+        window.clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
     };
