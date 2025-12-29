@@ -22,6 +22,7 @@ interface StockData {
   low: number;
   open: number;
   volume: number;
+  avgVolume: number;
   marketCap: string;
   peRatio: number;
   dividendYield: number;
@@ -169,6 +170,11 @@ const StockDetail = () => {
           console.log('Using price data:', price);
           console.log('Using fundamentals data:', fundamentalsData);
           
+          // Finnhub returns market cap in millions, so multiply by 1M
+          const marketCapValue = fundamentalsData.marketCapitalization 
+            ? fundamentalsData.marketCapitalization * 1000000 
+            : (stockInfo?.market_cap || null);
+          
           stockData = {
             symbol: symbol.toUpperCase(),
             name: stockInfo?.name || getCompanyName(symbol),
@@ -178,8 +184,9 @@ const StockDetail = () => {
             high: price.high || price.price || 0,
             low: price.low || price.price || 0,
             open: price.open || price.price || 0,
-            volume: 0, // Would need different API call for volume
-            marketCap: formatMarketCap(fundamentalsData.marketCapitalization || stockInfo?.market_cap),
+            volume: price.volume || 0,
+            avgVolume: price.avgVolume || 0,
+            marketCap: formatMarketCap(marketCapValue),
             peRatio: fundamentalsData.peRatio || 0,
             dividendYield: fundamentalsData.dividendYield || 0,  
             weekHigh52: fundamentalsData.week52High || 0,
@@ -188,6 +195,11 @@ const StockDetail = () => {
         } else {
           // Fallback data if API fails
           console.log('No price data, using fallback with fundamentals:', fundamentalsData);
+          
+          // Finnhub returns market cap in millions
+          const marketCapValue = fundamentalsData.marketCapitalization 
+            ? fundamentalsData.marketCapitalization * 1000000 
+            : (stockInfo?.market_cap || null);
           
           stockData = {
             symbol: symbol.toUpperCase(),
@@ -199,7 +211,8 @@ const StockDetail = () => {
             low: 0,
             open: 0,
             volume: 0,
-            marketCap: formatMarketCap(fundamentalsData.marketCapitalization || stockInfo?.market_cap),
+            avgVolume: 0,
+            marketCap: formatMarketCap(marketCapValue),
             peRatio: fundamentalsData.peRatio || 0,
             dividendYield: fundamentalsData.dividendYield || 0,
             weekHigh52: fundamentalsData.week52High || 0,

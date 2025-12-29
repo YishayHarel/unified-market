@@ -11,6 +11,7 @@ interface StockData {
   low: number;
   open: number;
   volume: number;
+  avgVolume: number;
   marketCap: string;
   peRatio: number;
   dividendYield: number;
@@ -22,6 +23,14 @@ interface StockFundamentalsProps {
   stockData: StockData;
 }
 
+const formatVolume = (volume: number) => {
+  if (!volume || volume === 0) return 'N/A';
+  if (volume >= 1e9) return `${(volume / 1e9).toFixed(2)}B`;
+  if (volume >= 1e6) return `${(volume / 1e6).toFixed(2)}M`;
+  if (volume >= 1e3) return `${(volume / 1e3).toFixed(1)}K`;
+  return volume.toLocaleString();
+};
+
 const StockFundamentals = ({ stockData }: StockFundamentalsProps) => {
   const fundamentals = [
     {
@@ -31,27 +40,32 @@ const StockFundamentals = ({ stockData }: StockFundamentalsProps) => {
     },
     {
       label: "P/E Ratio",
-      value: stockData.peRatio.toFixed(2),
+      value: stockData.peRatio ? stockData.peRatio.toFixed(2) : 'N/A',
       description: "Price-to-earnings ratio"
     },
     {
       label: "Dividend Yield",
-      value: `${stockData.dividendYield.toFixed(2)}%`,
+      value: stockData.dividendYield ? `${stockData.dividendYield.toFixed(2)}%` : 'N/A',
       description: "Annual dividend rate"
     },
     {
       label: "52W High",
-      value: `$${stockData.weekHigh52.toFixed(2)}`,
+      value: stockData.weekHigh52 ? `$${stockData.weekHigh52.toFixed(2)}` : 'N/A',
       description: "52-week high"
     },
     {
       label: "52W Low",
-      value: `$${stockData.weekLow52.toFixed(2)}`,
+      value: stockData.weekLow52 ? `$${stockData.weekLow52.toFixed(2)}` : 'N/A',
       description: "52-week low"
     },
     {
+      label: "Volume",
+      value: formatVolume(stockData.volume),
+      description: "Today's trading volume"
+    },
+    {
       label: "Avg Volume",
-      value: `${(stockData.volume / 1000000).toFixed(1)}M`,
+      value: formatVolume(stockData.avgVolume),
       description: "Average daily volume"
     }
   ];
