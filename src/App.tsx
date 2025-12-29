@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useErrorTracking } from "@/hooks/useErrorTracking";
 import { useAnalytics } from "@/hooks/useAnalytics";
+import { useAlertChecker } from "@/hooks/useAlertChecker";
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Index from "./pages/Index";
@@ -41,6 +42,7 @@ const queryClient = new QueryClient({
 const AppContent = () => {
   useErrorTracking();
   useAnalytics();
+  useAlertChecker(); // Check price/volume alerts every 60s
 
   return (
     <div className="relative">
