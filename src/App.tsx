@@ -19,6 +19,10 @@ import YishAI from "./pages/YishAI";
 import Subscription from "./pages/Subscription";
 import Settings from "./pages/Settings";
 import Install from "./pages/Install";
+import Social from "./pages/Social";
+import Discussions from "./pages/Discussions";
+import UserProfile from "./pages/UserProfile";
+import Leaderboard from "./pages/Leaderboard";
 import NotFound from "./pages/NotFound";
 import BottomNavigation from "./components/BottomNavigation";
 import PerformanceMonitor from "./components/PerformanceMonitor";
@@ -58,6 +62,10 @@ const AppContent = () => {
               <Route path="/subscription" element={<Subscription />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/install" element={<Install />} />
+              <Route path="/social" element={<Social />} />
+              <Route path="/discussions" element={<Discussions />} />
+              <Route path="/profile/:userId" element={<UserProfile />} />
+              <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/stock/:symbol" element={<StockDetail />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
