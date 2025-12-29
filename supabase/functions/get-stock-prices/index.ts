@@ -112,7 +112,9 @@ async function fetchTwelveDataBatch(symbols: string[], apiKey: string): Promise<
             high: parseFloat(data.high || data.close),
             low: parseFloat(data.low || data.close),
             open: parseFloat(data.open || data.close),
-            previousClose: parseFloat(data.previous_close || data.close)
+            previousClose: parseFloat(data.previous_close || data.close),
+            volume: parseInt(data.volume || '0', 10),
+            avgVolume: parseInt(data.average_volume || '0', 10)
           };
           results.set(symbol, priceData);
           setCache(symbol, priceData);
@@ -134,7 +136,9 @@ async function fetchTwelveDataBatch(symbols: string[], apiKey: string): Promise<
               high: parseFloat(symbolData.high || symbolData.close),
               low: parseFloat(symbolData.low || symbolData.close),
               open: parseFloat(symbolData.open || symbolData.close),
-              previousClose: parseFloat(symbolData.previous_close || symbolData.close)
+              previousClose: parseFloat(symbolData.previous_close || symbolData.close),
+              volume: parseInt(symbolData.volume || '0', 10),
+              avgVolume: parseInt(symbolData.average_volume || '0', 10)
             };
             results.set(symbol, priceData);
             setCache(symbol, priceData);
