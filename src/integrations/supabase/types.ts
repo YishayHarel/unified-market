@@ -41,6 +41,153 @@ export type Database = {
         }
         Relationships: []
       }
+      discussion_channels: {
+        Row: {
+          channel_type: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          sector: string | null
+          symbol: string | null
+          updated_at: string
+        }
+        Insert: {
+          channel_type?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          sector?: string | null
+          symbol?: string | null
+          updated_at?: string
+        }
+        Update: {
+          channel_type?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          sector?: string | null
+          symbol?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      discussion_post_likes: {
+        Row: {
+          created_at: string
+          id: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discussion_post_likes_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "discussion_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      discussion_posts: {
+        Row: {
+          channel_id: string
+          content: string
+          created_at: string
+          id: string
+          is_pinned: boolean
+          likes_count: number
+          replies_count: number
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          channel_id: string
+          content: string
+          created_at?: string
+          id?: string
+          is_pinned?: boolean
+          likes_count?: number
+          replies_count?: number
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          channel_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          is_pinned?: boolean
+          likes_count?: number
+          replies_count?: number
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discussion_posts_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "discussion_channels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      discussion_replies: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          likes_count: number
+          post_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          likes_count?: number
+          post_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          likes_count?: number
+          post_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discussion_replies_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "discussion_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       portfolio_holdings: {
         Row: {
           avg_cost: number
