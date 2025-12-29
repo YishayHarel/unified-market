@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,8 @@ import {
   Send,
   ArrowLeft,
   Clock,
-  User
+  User,
+  TrendingUp
 } from "lucide-react";
 
 interface Channel {
@@ -60,6 +61,7 @@ const Discussions = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
@@ -71,9 +73,25 @@ const Discussions = () => {
   const [newReply, setNewReply] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // Group channels by type
+  const generalChannels = channels.filter(c => c.channel_type === 'general' || c.channel_type === 'qa');
+  const sectorChannels = channels.filter(c => c.channel_type === 'sector');
+  const stockChannels = channels.filter(c => c.channel_type === 'stock');
+
   useEffect(() => {
     fetchChannels();
   }, []);
+
+  // Handle channel query param
+  useEffect(() => {
+    const channelId = searchParams.get('channel');
+    if (channelId && channels.length > 0) {
+      const channel = channels.find(c => c.id === channelId);
+      if (channel) {
+        setSelectedChannel(channel);
+      }
+    }
+  }, [searchParams, channels]);
 
   useEffect(() => {
     if (selectedChannel) {
@@ -92,11 +110,15 @@ const Discussions = () => {
       const { data, error } = await supabase
         .from('discussion_channels')
         .select('*')
-        .order('channel_type', { ascending: true });
+        .order('channel_type', { ascending: true })
+        .order('name', { ascending: true });
 
       if (error) throw error;
       setChannels(data || []);
-      if (data && data.length > 0) {
+      
+      // Only set default channel if no channel param
+      const channelId = searchParams.get('channel');
+      if (!channelId && data && data.length > 0) {
         setSelectedChannel(data[0]);
       }
     } catch (error) {
@@ -233,14 +255,19 @@ const Discussions = () => {
     }
   };
 
-  const getChannelIcon = (type: string) => {
+  const getChannelIcon = (type: string, symbol?: string | null) => {
     switch (type) {
       case 'general': return <Hash className="h-4 w-4" />;
       case 'qa': return <HelpCircle className="h-4 w-4" />;
       case 'sector': return <Briefcase className="h-4 w-4" />;
-      case 'stock': return <MessageSquare className="h-4 w-4" />;
+      case 'stock': return <TrendingUp className="h-4 w-4" />;
       default: return <Hash className="h-4 w-4" />;
     }
+  };
+
+  const handleSelectChannel = (channel: Channel) => {
+    setSelectedChannel(channel);
+    setSearchParams({ channel: channel.id });
   };
 
   const formatTimeAgo = (dateString: string) => {
@@ -353,21 +380,73 @@ const Discussions = () => {
             Channels
           </h2>
           <ScrollArea className="h-[calc(100vh-12rem)]">
-            <div className="space-y-1">
-              {channels.map((channel) => (
-                <button
-                  key={channel.id}
-                  onClick={() => setSelectedChannel(channel)}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
-                    selectedChannel?.id === channel.id
-                      ? 'bg-primary text-primary-foreground'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  {getChannelIcon(channel.channel_type)}
-                  <span className="truncate">{channel.name}</span>
-                </button>
-              ))}
+            <div className="space-y-4">
+              {/* General Channels */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase mb-2">General</p>
+                <div className="space-y-1">
+                  {generalChannels.map((channel) => (
+                    <button
+                      key={channel.id}
+                      onClick={() => handleSelectChannel(channel)}
+                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+                        selectedChannel?.id === channel.id
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-muted'
+                      }`}
+                    >
+                      {getChannelIcon(channel.channel_type)}
+                      <span className="truncate">{channel.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sector Channels */}
+              {sectorChannels.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Sectors</p>
+                  <div className="space-y-1">
+                    {sectorChannels.map((channel) => (
+                      <button
+                        key={channel.id}
+                        onClick={() => handleSelectChannel(channel)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+                          selectedChannel?.id === channel.id
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-muted'
+                        }`}
+                      >
+                        {getChannelIcon(channel.channel_type)}
+                        <span className="truncate">{channel.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Stock Channels */}
+              {stockChannels.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Stocks</p>
+                  <div className="space-y-1">
+                    {stockChannels.map((channel) => (
+                      <button
+                        key={channel.id}
+                        onClick={() => handleSelectChannel(channel)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+                          selectedChannel?.id === channel.id
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-muted'
+                        }`}
+                      >
+                        {getChannelIcon(channel.channel_type)}
+                        <span className="truncate font-mono">${channel.symbol}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </ScrollArea>
         </div>

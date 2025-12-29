@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, TrendingUp, TrendingDown, Star, Eye, Plus, Check } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Star, Eye, Plus, Check, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -108,6 +108,45 @@ const StockDetail = () => {
   // Handle Buy button click
   const handleBuy = () => {
     toast.info('Trading functionality coming soon! Connect your brokerage to enable trading.');
+  };
+
+  // Handle Discuss button click - create or navigate to stock channel
+  const handleDiscuss = async () => {
+    if (!symbol || !stockData) return;
+    
+    try {
+      // Check if channel already exists
+      const { data: existingChannel } = await supabase
+        .from('discussion_channels')
+        .select('id')
+        .eq('symbol', symbol.toUpperCase())
+        .maybeSingle();
+      
+      if (existingChannel) {
+        // Navigate to discussions with this channel
+        navigate(`/discussions?channel=${existingChannel.id}`);
+      } else {
+        // Create new stock channel
+        const { data: newChannel, error } = await supabase
+          .from('discussion_channels')
+          .insert({
+            name: symbol.toUpperCase(),
+            description: `Discussion about ${stockData.name} (${symbol.toUpperCase()})`,
+            channel_type: 'stock',
+            symbol: symbol.toUpperCase()
+          })
+          .select('id')
+          .single();
+        
+        if (error) throw error;
+        
+        toast.success(`Created discussion channel for ${symbol.toUpperCase()}`);
+        navigate(`/discussions?channel=${newChannel.id}`);
+      }
+    } catch (error) {
+      console.error('Error creating stock channel:', error);
+      toast.error('Failed to open discussion');
+    }
   };
 
   useEffect(() => {
@@ -327,6 +366,10 @@ const StockDetail = () => {
                 <Eye className="w-4 h-4 mr-2" />
               )}
               {isWatched ? 'Watching' : 'Watch'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleDiscuss}>
+              <MessageSquare className="w-4 h-4 mr-2" />
+              Discuss
             </Button>
             <Button size="sm" onClick={handleBuy}>
               <Plus className="w-4 h-4 mr-2" />
