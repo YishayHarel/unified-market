@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useDiscussionLikes } from "@/hooks/useDiscussionLikes";
+import { useDiscussionRealtime } from "@/hooks/useDiscussionRealtime";
 import { 
   MessageSquare, 
   Hash, 
@@ -73,62 +74,15 @@ const Discussions = () => {
   const [newReply, setNewReply] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // Likes hook
+  const { likedPosts, likedReplies, togglePostLike, toggleReplyLike } = useDiscussionLikes(selectedPost?.id);
+
   // Group channels by type
   const generalChannels = channels.filter(c => c.channel_type === 'general' || c.channel_type === 'qa');
   const sectorChannels = channels.filter(c => c.channel_type === 'sector');
   const stockChannels = channels.filter(c => c.channel_type === 'stock');
 
-  useEffect(() => {
-    fetchChannels();
-  }, []);
-
-  // Handle channel query param
-  useEffect(() => {
-    const channelId = searchParams.get('channel');
-    if (channelId && channels.length > 0) {
-      const channel = channels.find(c => c.id === channelId);
-      if (channel) {
-        setSelectedChannel(channel);
-      }
-    }
-  }, [searchParams, channels]);
-
-  useEffect(() => {
-    if (selectedChannel) {
-      fetchPosts(selectedChannel.id);
-    }
-  }, [selectedChannel]);
-
-  useEffect(() => {
-    if (selectedPost) {
-      fetchReplies(selectedPost.id);
-    }
-  }, [selectedPost]);
-
-  const fetchChannels = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('discussion_channels')
-        .select('*')
-        .order('channel_type', { ascending: true })
-        .order('name', { ascending: true });
-
-      if (error) throw error;
-      setChannels(data || []);
-      
-      // Only set default channel if no channel param
-      const channelId = searchParams.get('channel');
-      if (!channelId && data && data.length > 0) {
-        setSelectedChannel(data[0]);
-      }
-    } catch (error) {
-      console.error('Error fetching channels:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchPosts = async (channelId: string) => {
+  const fetchPosts = useCallback(async (channelId: string) => {
     try {
       const { data, error } = await supabase
         .from('discussion_posts')
@@ -139,7 +93,6 @@ const Discussions = () => {
 
       if (error) throw error;
 
-      // Fetch author names
       const userIds = [...new Set((data || []).map(p => p.user_id))];
       const { data: profiles } = await supabase
         .from('profiles')
@@ -157,9 +110,9 @@ const Discussions = () => {
     } catch (error) {
       console.error('Error fetching posts:', error);
     }
-  };
+  }, []);
 
-  const fetchReplies = async (postId: string) => {
+  const fetchReplies = useCallback(async (postId: string) => {
     try {
       const { data, error } = await supabase
         .from('discussion_replies')
@@ -185,6 +138,62 @@ const Discussions = () => {
       setReplies(repliesWithAuthors);
     } catch (error) {
       console.error('Error fetching replies:', error);
+    }
+  }, []);
+
+  // Realtime subscriptions
+  useDiscussionRealtime({
+    channelId: selectedChannel?.id,
+    postId: selectedPost?.id,
+    onPostsChange: () => selectedChannel && fetchPosts(selectedChannel.id),
+    onRepliesChange: () => selectedPost && fetchReplies(selectedPost.id)
+  });
+
+  useEffect(() => {
+    fetchChannels();
+  }, []);
+
+  useEffect(() => {
+    const channelId = searchParams.get('channel');
+    if (channelId && channels.length > 0) {
+      const channel = channels.find(c => c.id === channelId);
+      if (channel) {
+        setSelectedChannel(channel);
+      }
+    }
+  }, [searchParams, channels]);
+
+  useEffect(() => {
+    if (selectedChannel) {
+      fetchPosts(selectedChannel.id);
+    }
+  }, [selectedChannel, fetchPosts]);
+
+  useEffect(() => {
+    if (selectedPost) {
+      fetchReplies(selectedPost.id);
+    }
+  }, [selectedPost, fetchReplies]);
+
+  const fetchChannels = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('discussion_channels')
+        .select('*')
+        .order('channel_type', { ascending: true })
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setChannels(data || []);
+      
+      const channelId = searchParams.get('channel');
+      if (!channelId && data && data.length > 0) {
+        setSelectedChannel(data[0]);
+      }
+    } catch (error) {
+      console.error('Error fetching channels:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -214,7 +223,6 @@ const Discussions = () => {
       toast({ title: "Post created!" });
       setNewPost({ title: '', content: '' });
       setShowNewPost(false);
-      fetchPosts(selectedChannel.id);
     } catch (error) {
       console.error('Error creating post:', error);
       toast({ title: "Failed to create post", variant: "destructive" });
@@ -240,14 +248,12 @@ const Discussions = () => {
 
       if (error) throw error;
 
-      // Update replies count
       await supabase
         .from('discussion_posts')
         .update({ replies_count: selectedPost.replies_count + 1 })
         .eq('id', selectedPost.id);
 
       setNewReply('');
-      fetchReplies(selectedPost.id);
       setSelectedPost({ ...selectedPost, replies_count: selectedPost.replies_count + 1 });
     } catch (error) {
       console.error('Error creating reply:', error);
@@ -255,7 +261,21 @@ const Discussions = () => {
     }
   };
 
-  const getChannelIcon = (type: string, symbol?: string | null) => {
+  const handleLikePost = async (e: React.MouseEvent, post: Post) => {
+    e.stopPropagation();
+    const newCount = await togglePostLike(post.id, post.likes_count);
+    setPosts(prev => prev.map(p => p.id === post.id ? { ...p, likes_count: newCount } : p));
+    if (selectedPost?.id === post.id) {
+      setSelectedPost({ ...selectedPost, likes_count: newCount });
+    }
+  };
+
+  const handleLikeReply = async (reply: Reply) => {
+    const newCount = await toggleReplyLike(reply.id, reply.likes_count);
+    setReplies(prev => prev.map(r => r.id === reply.id ? { ...r, likes_count: newCount } : r));
+  };
+
+  const getChannelIcon = (type: string) => {
     switch (type) {
       case 'general': return <Hash className="h-4 w-4" />;
       case 'qa': return <HelpCircle className="h-4 w-4" />;
@@ -316,8 +336,13 @@ const Discussions = () => {
             <CardContent>
               <p className="whitespace-pre-wrap">{selectedPost.content}</p>
               <div className="flex items-center gap-4 mt-4 pt-4 border-t">
-                <Button variant="ghost" size="sm">
-                  <Heart className="h-4 w-4 mr-2" />
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={(e) => handleLikePost(e, selectedPost)}
+                  className={likedPosts.has(selectedPost.id) ? "text-red-500" : ""}
+                >
+                  <Heart className={`h-4 w-4 mr-2 ${likedPosts.has(selectedPost.id) ? "fill-current" : ""}`} />
                   {selectedPost.likes_count}
                 </Button>
                 <span className="text-sm text-muted-foreground">
@@ -356,6 +381,17 @@ const Discussions = () => {
                     <span>{formatTimeAgo(reply.created_at)}</span>
                   </div>
                   <p className="whitespace-pre-wrap">{reply.content}</p>
+                  <div className="mt-2">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => handleLikeReply(reply)}
+                      className={likedReplies.has(reply.id) ? "text-red-500" : ""}
+                    >
+                      <Heart className={`h-4 w-4 mr-1 ${likedReplies.has(reply.id) ? "fill-current" : ""}`} />
+                      {reply.likes_count}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -538,10 +574,13 @@ const Discussions = () => {
                               <MessageCircle className="h-3 w-3" />
                               {post.replies_count}
                             </span>
-                            <span className="flex items-center gap-1">
-                              <Heart className="h-3 w-3" />
+                            <button
+                              onClick={(e) => handleLikePost(e, post)}
+                              className={`flex items-center gap-1 hover:text-red-500 transition-colors ${likedPosts.has(post.id) ? "text-red-500" : ""}`}
+                            >
+                              <Heart className={`h-3 w-3 ${likedPosts.has(post.id) ? "fill-current" : ""}`} />
                               {post.likes_count}
-                            </span>
+                            </button>
                           </div>
                         </div>
                       </div>
