@@ -9,6 +9,9 @@ import MarketBreadth from "@/components/analytics/MarketBreadth";
 import CorrelationMatrix from "@/components/analytics/CorrelationMatrix";
 import VolumeProfile from "@/components/analytics/VolumeProfile";
 import TechnicalIndicators from "@/components/analytics/TechnicalIndicators";
+import AIScreener from "@/components/ai/AIScreener";
+import AIRiskAssessment from "@/components/ai/AIRiskAssessment";
+import AIDailyBrief from "@/components/ai/AIDailyBrief";
 
 const AdvancedAnalytics = () => {
   return (
@@ -19,14 +22,28 @@ const AdvancedAnalytics = () => {
       </header>
       
       <Tabs defaultValue="analytics" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 md:grid-cols-6">
+        <TabsList className="grid w-full grid-cols-4 md:grid-cols-8">
+          <TabsTrigger value="brief">Daily Brief</TabsTrigger>
+          <TabsTrigger value="ai-screener">AI Screener</TabsTrigger>
+          <TabsTrigger value="risk">Risk AI</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="screener">Screener</TabsTrigger>
           <TabsTrigger value="technicals">Technicals</TabsTrigger>
           <TabsTrigger value="sentiment">Sentiment</TabsTrigger>
-          <TabsTrigger value="portfolio">Portfolio AI</TabsTrigger>
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
         </TabsList>
+        
+        <TabsContent value="brief" className="space-y-6">
+          <AIDailyBrief />
+        </TabsContent>
+        
+        <TabsContent value="ai-screener" className="space-y-6">
+          <AIScreener />
+        </TabsContent>
+        
+        <TabsContent value="risk" className="space-y-6">
+          <AIRiskAssessment />
+        </TabsContent>
         
         <TabsContent value="analytics" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
