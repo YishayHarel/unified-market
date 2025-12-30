@@ -23,6 +23,7 @@ import Social from "./pages/Social";
 import Discussions from "./pages/Discussions";
 import UserProfile from "./pages/UserProfile";
 import Leaderboard from "./pages/Leaderboard";
+import AdvancedAnalytics from "./pages/AdvancedAnalytics";
 import NotFound from "./pages/NotFound";
 import BottomNavigation from "./components/BottomNavigation";
 import PerformanceMonitor from "./components/PerformanceMonitor";
@@ -66,6 +67,7 @@ const AppContent = () => {
               <Route path="/discussions" element={<Discussions />} />
               <Route path="/profile/:userId" element={<UserProfile />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
+              <Route path="/analytics" element={<AdvancedAnalytics />} />
               <Route path="/stock/:symbol" element={<StockDetail />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
