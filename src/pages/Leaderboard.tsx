@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +17,7 @@ import {
 interface LeaderboardUser {
   user_id: string;
   display_name: string;
+  followers_count: number;
   posts_count: number;
   replies_count: number;
   likes_received: number;
@@ -25,12 +25,11 @@ interface LeaderboardUser {
 }
 
 const Leaderboard = () => {
-  const navigate = useNavigate();
   const [topByEngagement, setTopByEngagement] = useState<LeaderboardUser[]>([]);
   const [topByPosts, setTopByPosts] = useState<LeaderboardUser[]>([]);
   const [topByLikes, setTopByLikes] = useState<LeaderboardUser[]>([]);
+  const [topByFollowers, setTopByFollowers] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     fetchLeaderboards();
   }, []);
@@ -54,42 +53,53 @@ const Leaderboard = () => {
         .from('discussion_replies')
         .select('user_id, likes_count');
 
+      // Get followers counts (public)
+      const { data: followsData } = await supabase
+        .from('social_follows')
+        .select('following_id');
+
       // Aggregate data - only public activity
-      const userStats = new Map<string, { posts: number; replies: number; likes: number }>();
+      const userStats = new Map<string, { posts: number; replies: number; likes: number; followers: number }>();
 
       profiles.forEach(p => {
-        userStats.set(p.user_id, { posts: 0, replies: 0, likes: 0 });
+        userStats.set(p.user_id, { posts: 0, replies: 0, likes: 0, followers: 0 });
       });
 
       postsData?.forEach(post => {
-        const current = userStats.get(post.user_id) || { posts: 0, replies: 0, likes: 0 };
-        userStats.set(post.user_id, {
-          ...current,
-          posts: current.posts + 1,
-          likes: current.likes + (post.likes_count || 0)
-        });
+        const current = userStats.get(post.user_id);
+        if (current) {
+          current.posts++;
+          current.likes += (post.likes_count || 0);
+        }
       });
 
       repliesData?.forEach(reply => {
-        const current = userStats.get(reply.user_id) || { posts: 0, replies: 0, likes: 0 };
-        userStats.set(reply.user_id, {
-          ...current,
-          replies: current.replies + 1,
-          likes: current.likes + (reply.likes_count || 0)
-        });
+        const current = userStats.get(reply.user_id);
+        if (current) {
+          current.replies++;
+          current.likes += (reply.likes_count || 0);
+        }
+      });
+
+      followsData?.forEach(follow => {
+        const current = userStats.get(follow.following_id);
+        if (current) {
+          current.followers++;
+        }
       });
 
       // Build leaderboard data
       const leaderboardData: LeaderboardUser[] = profiles.map(p => {
-        const stats = userStats.get(p.user_id) || { posts: 0, replies: 0, likes: 0 };
-        // Engagement score: posts worth 3, replies worth 1, likes received worth 2
-        const engagementScore = (stats.posts * 3) + (stats.replies * 1) + (stats.likes * 2);
+        const stats = userStats.get(p.user_id) || { posts: 0, replies: 0, likes: 0, followers: 0 };
+        // Engagement score: posts worth 3, replies worth 1, likes received worth 2, followers worth 5
+        const engagementScore = (stats.posts * 3) + (stats.replies * 1) + (stats.likes * 2) + (stats.followers * 5);
         return {
           user_id: p.user_id,
           display_name: p.display_name || 'Anonymous',
           posts_count: stats.posts,
           replies_count: stats.replies,
           likes_received: stats.likes,
+          followers_count: stats.followers,
           engagement_score: engagementScore
         };
       });
@@ -114,9 +124,16 @@ const Leaderboard = () => {
         .sort((a, b) => b.likes_received - a.likes_received)
         .slice(0, 20);
 
+      // Sort by followers
+      const byFollowers = [...activeUsers]
+        .filter(u => u.followers_count > 0)
+        .sort((a, b) => b.followers_count - a.followers_count)
+        .slice(0, 20);
+
       setTopByEngagement(byEngagement);
       setTopByPosts(byPosts);
       setTopByLikes(byLikes);
+      setTopByFollowers(byFollowers);
     } catch (error) {
       console.error('Error fetching leaderboards:', error);
     } finally {
@@ -138,7 +155,7 @@ const Leaderboard = () => {
     metric 
   }: { 
     users: LeaderboardUser[]; 
-    metric: 'engagement' | 'posts' | 'likes' 
+    metric: 'engagement' | 'posts' | 'likes' | 'followers'
   }) => (
     <div className="space-y-2">
       {users.map((user, index) => (
@@ -162,12 +179,12 @@ const Leaderboard = () => {
                     {user.posts_count} posts
                   </span>
                   <span className="flex items-center gap-1">
-                    <TrendingUp className="h-3 w-3" />
-                    {user.replies_count} replies
-                  </span>
-                  <span className="flex items-center gap-1">
                     <Heart className="h-3 w-3" />
                     {user.likes_received} likes
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Users className="h-3 w-3" />
+                    {user.followers_count} followers
                   </span>
                 </div>
               </div>
@@ -175,6 +192,7 @@ const Leaderboard = () => {
                 {metric === 'engagement' && user.engagement_score}
                 {metric === 'posts' && user.posts_count}
                 {metric === 'likes' && user.likes_received}
+                {metric === 'followers' && user.followers_count}
               </Badge>
             </div>
           </CardContent>
@@ -203,18 +221,22 @@ const Leaderboard = () => {
         </header>
 
         <Tabs defaultValue="engagement" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="engagement" className="flex items-center gap-1 text-xs sm:text-sm">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="engagement" className="flex items-center gap-1 text-xs">
               <TrendingUp className="h-4 w-4" />
-              <span className="hidden sm:inline">Top</span> Engaged
+              <span className="hidden sm:inline">Top</span>
             </TabsTrigger>
-            <TabsTrigger value="posts" className="flex items-center gap-1 text-xs sm:text-sm">
+            <TabsTrigger value="posts" className="flex items-center gap-1 text-xs">
               <MessageSquare className="h-4 w-4" />
-              <span className="hidden sm:inline">Most</span> Posts
+              <span className="hidden sm:inline">Posts</span>
             </TabsTrigger>
-            <TabsTrigger value="likes" className="flex items-center gap-1 text-xs sm:text-sm">
+            <TabsTrigger value="likes" className="flex items-center gap-1 text-xs">
               <Heart className="h-4 w-4" />
-              <span className="hidden sm:inline">Most</span> Liked
+              <span className="hidden sm:inline">Liked</span>
+            </TabsTrigger>
+            <TabsTrigger value="followers" className="flex items-center gap-1 text-xs">
+              <Users className="h-4 w-4" />
+              <span className="hidden sm:inline">Followed</span>
             </TabsTrigger>
           </TabsList>
           
@@ -239,6 +261,14 @@ const Leaderboard = () => {
               <div className="text-center py-8 text-muted-foreground">Loading...</div>
             ) : (
               <LeaderboardList users={topByLikes} metric="likes" />
+            )}
+          </TabsContent>
+          
+          <TabsContent value="followers" className="mt-4">
+            {loading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            ) : (
+              <LeaderboardList users={topByFollowers} metric="followers" />
             )}
           </TabsContent>
         </Tabs>

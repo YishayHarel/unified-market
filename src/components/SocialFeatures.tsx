@@ -2,148 +2,236 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   Users, 
-  Plus, 
   Heart, 
   MessageCircle, 
-  Share2, 
-  TrendingUp, 
-  TrendingDown, 
-  Eye,
   UserPlus,
-  UserMinus
+  UserMinus,
+  User,
+  MessageSquare,
+  Clock
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 
-interface SocialPick {
-  id: string;
-  user_id: string;
-  symbol: string;
-  pick_type: string;
-  reasoning: string;
-  target_price?: number;
-  confidence_level: number;
-  likes_count: number;
-  created_at: string;
-  profiles?: {
-    display_name: string;
-  } | null;
-}
-
-interface UserProfile {
+interface FollowedUser {
   user_id: string;
   display_name: string;
-  isFollowing?: boolean;
+  posts_count: number;
+  replies_count: number;
+  followers_count: number;
+}
+
+interface ActivityItem {
+  id: string;
+  type: 'post' | 'reply';
+  user_id: string;
+  author_name: string;
+  title?: string;
+  content: string;
+  likes_count: number;
+  created_at: string;
+  channel_name?: string;
 }
 
 const SocialFeatures = () => {
-  const [picks, setPicks] = useState<SocialPick[]>([]);
-  const [following, setFollowing] = useState<string[]>([]);
-  const [showCreatePick, setShowCreatePick] = useState(false);
-  const [newPick, setNewPick] = useState({
-    symbol: '',
-    pick_type: 'buy',
-    reasoning: '',
-    target_price: '',
-    confidence_level: 3
-  });
+  const [following, setFollowing] = useState<FollowedUser[]>([]);
+  const [followers, setFollowers] = useState<FollowedUser[]>([]);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
+  const [searchResults, setSearchResults] = useState<FollowedUser[]>([]);
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (user) {
-      fetchSocialPicks();
       fetchFollowing();
+      fetchFollowers();
     }
   }, [user]);
 
-  const fetchSocialPicks = async () => {
-    try {
-      const { data, error } = await (supabase
-        .from('social_picks') as any)
-        .select('*')
-        .eq('is_public', true)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-      setPicks(data || []);
-    } catch (error) {
-      console.error('Error fetching social picks:', error);
+  useEffect(() => {
+    if (followingIds.size > 0) {
+      fetchFollowingActivity();
     }
-  };
+  }, [followingIds]);
 
   const fetchFollowing = async () => {
+    if (!user) return;
     try {
-      const { data, error } = await (supabase
-        .from('social_follows') as any)
+      // Get who I'm following
+      const { data: followsData } = await supabase
+        .from('social_follows')
         .select('following_id')
-        .eq('follower_id', user?.id);
+        .eq('follower_id', user.id);
 
-      if (error) throw error;
-      setFollowing(data?.map((f: any) => f.following_id) || []);
+      const followingUserIds = followsData?.map(f => f.following_id) || [];
+      setFollowingIds(new Set(followingUserIds));
+
+      if (followingUserIds.length === 0) {
+        setFollowing([]);
+        return;
+      }
+
+      // Get profiles and stats for followed users
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, display_name')
+        .in('user_id', followingUserIds);
+
+      // Get post counts
+      const { data: posts } = await supabase
+        .from('discussion_posts')
+        .select('user_id')
+        .in('user_id', followingUserIds);
+
+      // Get reply counts
+      const { data: replies } = await supabase
+        .from('discussion_replies')
+        .select('user_id')
+        .in('user_id', followingUserIds);
+
+      // Get follower counts
+      const { data: allFollows } = await supabase
+        .from('social_follows')
+        .select('following_id')
+        .in('following_id', followingUserIds);
+
+      // Aggregate stats
+      const stats = new Map<string, { posts: number; replies: number; followers: number }>();
+      followingUserIds.forEach(id => stats.set(id, { posts: 0, replies: 0, followers: 0 }));
+
+      posts?.forEach(p => {
+        const s = stats.get(p.user_id);
+        if (s) s.posts++;
+      });
+
+      replies?.forEach(r => {
+        const s = stats.get(r.user_id);
+        if (s) s.replies++;
+      });
+
+      allFollows?.forEach(f => {
+        const s = stats.get(f.following_id);
+        if (s) s.followers++;
+      });
+
+      const followingData: FollowedUser[] = (profiles || []).map(p => ({
+        user_id: p.user_id,
+        display_name: p.display_name || 'Anonymous',
+        posts_count: stats.get(p.user_id)?.posts || 0,
+        replies_count: stats.get(p.user_id)?.replies || 0,
+        followers_count: stats.get(p.user_id)?.followers || 0
+      }));
+
+      setFollowing(followingData);
     } catch (error) {
       console.error('Error fetching following:', error);
     }
   };
 
-  const createPick = async () => {
-    if (!newPick.symbol || !newPick.reasoning) {
-      toast({
-        title: "Error",
-        description: "Please fill in symbol and reasoning",
-        variant: "destructive",
-      });
-      return;
+  const fetchFollowers = async () => {
+    if (!user) return;
+    try {
+      const { data: followsData } = await supabase
+        .from('social_follows')
+        .select('follower_id')
+        .eq('following_id', user.id);
+
+      const followerIds = followsData?.map(f => f.follower_id) || [];
+
+      if (followerIds.length === 0) {
+        setFollowers([]);
+        return;
+      }
+
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, display_name')
+        .in('user_id', followerIds);
+
+      const followersData: FollowedUser[] = (profiles || []).map(p => ({
+        user_id: p.user_id,
+        display_name: p.display_name || 'Anonymous',
+        posts_count: 0,
+        replies_count: 0,
+        followers_count: 0
+      }));
+
+      setFollowers(followersData);
+    } catch (error) {
+      console.error('Error fetching followers:', error);
     }
+  };
+
+  const fetchFollowingActivity = async () => {
+    if (followingIds.size === 0) return;
 
     try {
-      const pickData = {
-        user_id: user?.id,
-        symbol: newPick.symbol.toUpperCase(),
-        pick_type: newPick.pick_type,
-        reasoning: newPick.reasoning,
-        target_price: newPick.target_price ? parseFloat(newPick.target_price) : null,
-        confidence_level: newPick.confidence_level,
-      };
+      const userIds = Array.from(followingIds);
 
-      const { error } = await (supabase
-        .from('social_picks') as any)
-        .insert([pickData]);
+      // Fetch recent posts from followed users
+      const { data: postsData } = await supabase
+        .from('discussion_posts')
+        .select('id, user_id, title, content, likes_count, created_at, channel_id')
+        .in('user_id', userIds)
+        .order('created_at', { ascending: false })
+        .limit(20);
 
-      if (error) throw error;
+      // Fetch recent replies from followed users
+      const { data: repliesData } = await supabase
+        .from('discussion_replies')
+        .select('id, user_id, content, likes_count, created_at, post_id')
+        .in('user_id', userIds)
+        .order('created_at', { ascending: false })
+        .limit(20);
 
-      toast({
-        title: "Success",
-        description: "Your pick has been shared!",
-      });
+      // Get author names
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, display_name')
+        .in('user_id', userIds);
 
-      setNewPick({
-        symbol: '',
-        pick_type: 'buy',
-        reasoning: '',
-        target_price: '',
-        confidence_level: 3
-      });
-      setShowCreatePick(false);
-      fetchSocialPicks();
+      const profileMap = new Map(profiles?.map(p => [p.user_id, p.display_name || 'Anonymous']) || []);
+
+      const activityItems: ActivityItem[] = [
+        ...(postsData || []).map(p => ({
+          id: p.id,
+          type: 'post' as const,
+          user_id: p.user_id,
+          author_name: profileMap.get(p.user_id) || 'Anonymous',
+          title: p.title,
+          content: p.content,
+          likes_count: p.likes_count,
+          created_at: p.created_at
+        })),
+        ...(repliesData || []).map(r => ({
+          id: r.id,
+          type: 'reply' as const,
+          user_id: r.user_id,
+          author_name: profileMap.get(r.user_id) || 'Anonymous',
+          content: r.content,
+          likes_count: r.likes_count,
+          created_at: r.created_at
+        }))
+      ];
+
+      // Sort by date
+      activityItems.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      setActivity(activityItems.slice(0, 30));
     } catch (error) {
-      console.error('Error creating pick:', error);
-      toast({
-        title: "Error",
-        description: "Failed to share pick",
-        variant: "destructive",
-      });
+      console.error('Error fetching activity:', error);
     }
   };
 
@@ -152,112 +240,94 @@ const SocialFeatures = () => {
 
     setLoading(true);
     try {
-      const { data, error } = await (supabase
-        .from('profiles') as any)
+      const { data, error } = await supabase
+        .from('profiles')
         .select('user_id, display_name')
         .ilike('display_name', `%${searchQuery}%`)
+        .neq('user_id', user?.id || '')
         .limit(10);
 
       if (error) throw error;
 
-      const usersWithFollowStatus = (data || []).map((u: any) => ({
-        ...u,
-        isFollowing: following.includes(u.user_id)
+      const results: FollowedUser[] = (data || []).map(u => ({
+        user_id: u.user_id,
+        display_name: u.display_name || 'Anonymous',
+        posts_count: 0,
+        replies_count: 0,
+        followers_count: 0
       }));
 
-      setSearchResults(usersWithFollowStatus);
+      setSearchResults(results);
     } catch (error) {
       console.error('Error searching users:', error);
-      toast({
-        title: "Error",
-        description: "Failed to search users",
-        variant: "destructive",
-      });
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleFollow = async (userId: string, isCurrentlyFollowing: boolean) => {
+  const toggleFollow = async (userId: string) => {
+    if (!user) return;
+
+    const isCurrentlyFollowing = followingIds.has(userId);
+
     try {
       if (isCurrentlyFollowing) {
-        const { error } = await (supabase
-          .from('social_follows') as any)
+        await supabase
+          .from('social_follows')
           .delete()
-          .eq('follower_id', user?.id)
+          .eq('follower_id', user.id)
           .eq('following_id', userId);
 
-        if (error) throw error;
-        setFollowing(prev => prev.filter(id => id !== userId));
+        setFollowingIds(prev => {
+          const next = new Set(prev);
+          next.delete(userId);
+          return next;
+        });
+        setFollowing(prev => prev.filter(u => u.user_id !== userId));
       } else {
-        const { error } = await (supabase
-          .from('social_follows') as any)
-          .insert([{
-            follower_id: user?.id,
-            following_id: userId
-          }]);
+        await supabase
+          .from('social_follows')
+          .insert({ follower_id: user.id, following_id: userId });
 
-        if (error) throw error;
-        setFollowing(prev => [...prev, userId]);
+        setFollowingIds(prev => new Set(prev).add(userId));
       }
 
       // Update search results
-      setSearchResults(prev => 
-        prev.map(user => 
-          user.user_id === userId 
-            ? { ...user, isFollowing: !isCurrentlyFollowing }
-            : user
-        )
-      );
+      setSearchResults(prev => prev.filter(u => u.user_id !== userId));
 
       toast({
-        title: "Success",
-        description: isCurrentlyFollowing ? "Unfollowed user" : "Following user",
+        title: isCurrentlyFollowing ? "Unfollowed" : "Following",
+        description: isCurrentlyFollowing ? "You unfollowed this user" : "You're now following this user"
       });
+
+      if (!isCurrentlyFollowing) {
+        fetchFollowing();
+      }
     } catch (error) {
       console.error('Error toggling follow:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update follow status",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to update follow", variant: "destructive" });
     }
   };
 
-  const getPickTypeIcon = (pickType: string) => {
-    switch (pickType) {
-      case 'buy':
-        return <TrendingUp className="h-4 w-4 text-green-600" />;
-      case 'sell':
-        return <TrendingDown className="h-4 w-4 text-red-600" />;
-      case 'hold':
-        return <Eye className="h-4 w-4 text-blue-600" />;
-      default:
-        return <Eye className="h-4 w-4 text-gray-600" />;
-    }
-  };
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
 
-  const getPickTypeBadge = (pickType: string) => {
-    switch (pickType) {
-      case 'buy':
-        return 'default';
-      case 'sell':
-        return 'destructive';
-      case 'hold':
-        return 'secondary';
-      default:
-        return 'outline';
-    }
-  };
-
-  const getConfidenceStars = (level: number) => {
-    return '★'.repeat(level) + '☆'.repeat(5 - level);
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
   };
 
   if (!user) {
     return (
       <Card>
         <CardContent className="p-6 text-center">
+          <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
           <p className="text-muted-foreground">Please sign in to access social features.</p>
         </CardContent>
       </Card>
@@ -266,250 +336,186 @@ const SocialFeatures = () => {
 
   return (
     <div className="space-y-6">
+      {/* Search Users */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            Social Trading Community
+            Find Traders to Follow
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* User Search & Follow */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Find Traders</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Search users by name..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && searchUsers()}
-                />
-                <Button onClick={searchUsers} disabled={loading}>
-                  Search
-                </Button>
-              </div>
-              
-              {searchResults.length > 0 && (
-                <div className="space-y-2">
-                  {searchResults.map((user) => (
-                    <Card key={user.user_id}>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="font-semibold">{user.display_name}</div>
-                          </div>
-                          <Button
-                            variant={user.isFollowing ? "outline" : "default"}
-                            size="sm"
-                            onClick={() => toggleFollow(user.user_id, user.isFollowing || false)}
-                          >
-                            {user.isFollowing ? (
-                              <>
-                                <UserMinus className="h-4 w-4 mr-2" />
-                                Unfollow
-                              </>
-                            ) : (
-                              <>
-                                <UserPlus className="h-4 w-4 mr-2" />
-                                Follow
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Create Pick */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Share Your Pick</CardTitle>
-              <Button
-                onClick={() => setShowCreatePick(!showCreatePick)}
-                variant="outline"
-                size="sm"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Share Pick
-              </Button>
-            </CardHeader>
-            {showCreatePick && (
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="pick-symbol">Stock Symbol</Label>
-                    <Input
-                      id="pick-symbol"
-                      placeholder="AAPL"
-                      value={newPick.symbol}
-                      onChange={(e) => setNewPick({ ...newPick, symbol: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="pick-type">Pick Type</Label>
-                    <Select
-                      value={newPick.pick_type}
-                      onValueChange={(value) => setNewPick({ ...newPick, pick_type: value })}
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <Input
+              placeholder="Search by name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && searchUsers()}
+            />
+            <Button onClick={searchUsers} disabled={loading}>
+              Search
+            </Button>
+          </div>
+          
+          {searchResults.length > 0 && (
+            <div className="space-y-2">
+              {searchResults.map((u) => (
+                <Card key={u.user_id}>
+                  <CardContent className="py-3 px-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                        <User className="h-4 w-4 text-primary" />
+                      </div>
+                      <span className="font-medium">{u.display_name}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => toggleFollow(u.user_id)}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="buy">Buy</SelectItem>
-                        <SelectItem value="sell">Sell</SelectItem>
-                        <SelectItem value="hold">Hold</SelectItem>
-                        <SelectItem value="watch">Watch</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="target-price">Target Price (Optional)</Label>
-                    <Input
-                      id="target-price"
-                      type="number"
-                      step="0.01"
-                      placeholder="150.00"
-                      value={newPick.target_price}
-                      onChange={(e) => setNewPick({ ...newPick, target_price: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="confidence">Confidence Level</Label>
-                    <Select
-                      value={newPick.confidence_level.toString()}
-                      onValueChange={(value) => setNewPick({ ...newPick, confidence_level: parseInt(value) })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1 Star - Low</SelectItem>
-                        <SelectItem value="2">2 Stars</SelectItem>
-                        <SelectItem value="3">3 Stars - Medium</SelectItem>
-                        <SelectItem value="4">4 Stars</SelectItem>
-                        <SelectItem value="5">5 Stars - High</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="reasoning">Your Reasoning</Label>
-                  <Textarea
-                    id="reasoning"
-                    placeholder="Why are you making this pick? Share your analysis..."
-                    value={newPick.reasoning}
-                    onChange={(e) => setNewPick({ ...newPick, reasoning: e.target.value })}
-                    rows={3}
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setShowCreatePick(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={createPick}>
-                    <Share2 className="h-4 w-4 mr-2" />
-                    Share Pick
-                  </Button>
-                </div>
-              </CardContent>
-            )}
-          </Card>
-
-          {/* Social Feed */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Community Picks</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {picks.length === 0 ? (
-                <div className="text-center py-8">
-                  <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No community picks yet.</p>
-                  <p className="text-sm text-muted-foreground">Be the first to share your stock pick!</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {picks.map((pick) => (
-                    <Card key={pick.id} className="border-l-4 border-l-primary">
-                      <CardContent className="p-4">
-                        <div className="space-y-3">
-                          {/* Header */}
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-2">
-                                {getPickTypeIcon(pick.pick_type)}
-                                <Badge variant={getPickTypeBadge(pick.pick_type)}>
-                                  {pick.pick_type.toUpperCase()}
-                                </Badge>
-                              </div>
-                              <div className="font-semibold text-lg">{pick.symbol}</div>
-                              {pick.target_price && (
-                                <div className="text-sm text-muted-foreground">
-                                  Target: ${pick.target_price}
-                                </div>
-                              )}
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-medium">
-                                {pick.profiles?.display_name || 'Anonymous'}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {new Date(pick.created_at).toLocaleDateString()}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Confidence & Reasoning */}
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-muted-foreground">Confidence:</span>
-                              <span className="text-sm">
-                                {getConfidenceStars(pick.confidence_level)}
-                              </span>
-                            </div>
-                            <div className="text-sm">
-                              <span className="font-medium">Analysis: </span>
-                              {pick.reasoning}
-                            </div>
-                          </div>
-
-                          {/* Actions */}
-                          <div className="flex items-center gap-4 pt-2 border-t">
-                            <Button variant="ghost" size="sm">
-                              <Heart className="h-4 w-4 mr-2" />
-                              {pick.likes_count}
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <MessageCircle className="h-4 w-4 mr-2" />
-                              Comment
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Share2 className="h-4 w-4 mr-2" />
-                              Share
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Follow
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Tabs for Following/Followers/Activity */}
+      <Tabs defaultValue="activity" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="activity">
+            <MessageSquare className="h-4 w-4 mr-2" />
+            Feed
+          </TabsTrigger>
+          <TabsTrigger value="following">
+            Following ({following.length})
+          </TabsTrigger>
+          <TabsTrigger value="followers">
+            Followers ({followers.length})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="activity" className="mt-4 space-y-3">
+          {activity.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No activity from people you follow yet.</p>
+                <p className="text-sm">Follow traders to see their posts and replies here!</p>
+              </CardContent>
+            </Card>
+          ) : (
+            activity.map((item) => (
+              <Card key={`${item.type}-${item.id}`} className="hover:bg-muted/50 transition-colors">
+                <CardContent className="py-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                      <User className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold">{item.author_name}</span>
+                        <Badge variant="outline" className="text-xs">
+                          {item.type === 'post' ? 'Posted' : 'Replied'}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {formatTimeAgo(item.created_at)}
+                        </span>
+                      </div>
+                      {item.title && (
+                        <h4 className="font-medium mb-1">{item.title}</h4>
+                      )}
+                      <p className="text-sm text-muted-foreground line-clamp-2">{item.content}</p>
+                      <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Heart className="h-3 w-3" />
+                          {item.likes_count}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+
+        <TabsContent value="following" className="mt-4 space-y-2">
+          {following.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>You're not following anyone yet.</p>
+                <p className="text-sm">Search for traders above to start following!</p>
+              </CardContent>
+            </Card>
+          ) : (
+            following.map((u) => (
+              <Card key={u.user_id}>
+                <CardContent className="py-3 px-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                      <User className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <div className="font-semibold">{u.display_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {u.posts_count} posts • {u.replies_count} replies • {u.followers_count} followers
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toggleFollow(u.user_id)}
+                  >
+                    <UserMinus className="h-4 w-4 mr-2" />
+                    Unfollow
+                  </Button>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+
+        <TabsContent value="followers" className="mt-4 space-y-2">
+          {followers.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No followers yet.</p>
+                <p className="text-sm">Share great insights in discussions to grow your following!</p>
+              </CardContent>
+            </Card>
+          ) : (
+            followers.map((u) => (
+              <Card key={u.user_id}>
+                <CardContent className="py-3 px-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                      <User className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="font-semibold">{u.display_name}</div>
+                  </div>
+                  {!followingIds.has(u.user_id) && (
+                    <Button
+                      size="sm"
+                      onClick={() => toggleFollow(u.user_id)}
+                    >
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Follow Back
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
