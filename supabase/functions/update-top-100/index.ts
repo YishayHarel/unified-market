@@ -5,58 +5,158 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-interface Stock {
-  id: number;
-  symbol: string;
+// Real top 100 US stocks by market cap (major companies)
+const TOP_100_SYMBOLS = [
+  'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.B', 'UNH', 'XOM',
+  'JNJ', 'JPM', 'V', 'PG', 'MA', 'HD', 'CVX', 'MRK', 'ABBV', 'LLY',
+  'PEP', 'KO', 'COST', 'AVGO', 'TMO', 'MCD', 'WMT', 'CSCO', 'ACN', 'ABT',
+  'CRM', 'DHR', 'BAC', 'ADBE', 'NKE', 'DIS', 'NFLX', 'CMCSA', 'VZ', 'INTC',
+  'PFE', 'TXN', 'PM', 'WFC', 'NEE', 'RTX', 'UPS', 'HON', 'T', 'QCOM',
+  'ORCL', 'IBM', 'AMD', 'LOW', 'BMY', 'SPGI', 'UNP', 'CAT', 'GS', 'MS',
+  'SBUX', 'BLK', 'DE', 'ELV', 'AMAT', 'ISRG', 'INTU', 'GILD', 'AXP', 'LMT',
+  'MDLZ', 'ADI', 'ADP', 'CVS', 'SYK', 'TJX', 'BKNG', 'MMC', 'VRTX', 'REGN',
+  'PLD', 'TMUS', 'AMT', 'ZTS', 'SCHW', 'C', 'MO', 'CB', 'SO', 'DUK',
+  'CI', 'BDX', 'EOG', 'SLB', 'PNC', 'ICE', 'CL', 'EQIX', 'USB', 'MMM'
+];
+
+// Company names mapping
+const COMPANY_NAMES: Record<string, string> = {
+  'AAPL': 'Apple Inc.',
+  'MSFT': 'Microsoft Corporation',
+  'GOOGL': 'Alphabet Inc.',
+  'AMZN': 'Amazon.com Inc.',
+  'NVDA': 'NVIDIA Corporation',
+  'META': 'Meta Platforms Inc.',
+  'TSLA': 'Tesla Inc.',
+  'BRK.B': 'Berkshire Hathaway Inc.',
+  'UNH': 'UnitedHealth Group Inc.',
+  'XOM': 'Exxon Mobil Corporation',
+  'JNJ': 'Johnson & Johnson',
+  'JPM': 'JPMorgan Chase & Co.',
+  'V': 'Visa Inc.',
+  'PG': 'Procter & Gamble Co.',
+  'MA': 'Mastercard Inc.',
+  'HD': 'The Home Depot Inc.',
+  'CVX': 'Chevron Corporation',
+  'MRK': 'Merck & Co. Inc.',
+  'ABBV': 'AbbVie Inc.',
+  'LLY': 'Eli Lilly and Company',
+  'PEP': 'PepsiCo Inc.',
+  'KO': 'The Coca-Cola Company',
+  'COST': 'Costco Wholesale Corporation',
+  'AVGO': 'Broadcom Inc.',
+  'TMO': 'Thermo Fisher Scientific Inc.',
+  'MCD': "McDonald's Corporation",
+  'WMT': 'Walmart Inc.',
+  'CSCO': 'Cisco Systems Inc.',
+  'ACN': 'Accenture plc',
+  'ABT': 'Abbott Laboratories',
+  'CRM': 'Salesforce Inc.',
+  'DHR': 'Danaher Corporation',
+  'BAC': 'Bank of America Corporation',
+  'ADBE': 'Adobe Inc.',
+  'NKE': 'NIKE Inc.',
+  'DIS': 'The Walt Disney Company',
+  'NFLX': 'Netflix Inc.',
+  'CMCSA': 'Comcast Corporation',
+  'VZ': 'Verizon Communications Inc.',
+  'INTC': 'Intel Corporation',
+  'PFE': 'Pfizer Inc.',
+  'TXN': 'Texas Instruments Inc.',
+  'PM': 'Philip Morris International Inc.',
+  'WFC': 'Wells Fargo & Company',
+  'NEE': 'NextEra Energy Inc.',
+  'RTX': 'RTX Corporation',
+  'UPS': 'United Parcel Service Inc.',
+  'HON': 'Honeywell International Inc.',
+  'T': 'AT&T Inc.',
+  'QCOM': 'QUALCOMM Inc.',
+  'ORCL': 'Oracle Corporation',
+  'IBM': 'International Business Machines',
+  'AMD': 'Advanced Micro Devices Inc.',
+  'LOW': "Lowe's Companies Inc.",
+  'BMY': 'Bristol-Myers Squibb Company',
+  'SPGI': 'S&P Global Inc.',
+  'UNP': 'Union Pacific Corporation',
+  'CAT': 'Caterpillar Inc.',
+  'GS': 'Goldman Sachs Group Inc.',
+  'MS': 'Morgan Stanley',
+  'SBUX': 'Starbucks Corporation',
+  'BLK': 'BlackRock Inc.',
+  'DE': 'Deere & Company',
+  'ELV': 'Elevance Health Inc.',
+  'AMAT': 'Applied Materials Inc.',
+  'ISRG': 'Intuitive Surgical Inc.',
+  'INTU': 'Intuit Inc.',
+  'GILD': 'Gilead Sciences Inc.',
+  'AXP': 'American Express Company',
+  'LMT': 'Lockheed Martin Corporation',
+  'MDLZ': 'Mondelez International Inc.',
+  'ADI': 'Analog Devices Inc.',
+  'ADP': 'Automatic Data Processing Inc.',
+  'CVS': 'CVS Health Corporation',
+  'SYK': 'Stryker Corporation',
+  'TJX': 'The TJX Companies Inc.',
+  'BKNG': 'Booking Holdings Inc.',
+  'MMC': 'Marsh & McLennan Companies',
+  'VRTX': 'Vertex Pharmaceuticals Inc.',
+  'REGN': 'Regeneron Pharmaceuticals Inc.',
+  'PLD': 'Prologis Inc.',
+  'TMUS': 'T-Mobile US Inc.',
+  'AMT': 'American Tower Corporation',
+  'ZTS': 'Zoetis Inc.',
+  'SCHW': 'Charles Schwab Corporation',
+  'C': 'Citigroup Inc.',
+  'MO': 'Altria Group Inc.',
+  'CB': 'Chubb Limited',
+  'SO': 'Southern Company',
+  'DUK': 'Duke Energy Corporation',
+  'CI': 'The Cigna Group',
+  'BDX': 'Becton Dickinson and Company',
+  'EOG': 'EOG Resources Inc.',
+  'SLB': 'Schlumberger Limited',
+  'PNC': 'PNC Financial Services Group',
+  'ICE': 'Intercontinental Exchange Inc.',
+  'CL': 'Colgate-Palmolive Company',
+  'EQIX': 'Equinix Inc.',
+  'USB': 'U.S. Bancorp',
+  'MMM': '3M Company'
+};
+
+interface StockQuote {
+  c: number; // Current price
+  d: number; // Change
+  dp: number; // Percent change
+  h: number; // High
+  l: number; // Low
+  o: number; // Open
+  pc: number; // Previous close
+}
+
+interface CompanyProfile {
+  marketCapitalization: number;
   name: string;
-  market_cap: number | null;
-  trending_score: number | null;
-  last_return_1d: number | null;
-  rel_volume: number | null;
-  avg_volume: number | null;
 }
 
-interface StockWithScore extends Stock {
-  composite_score: number;
-}
-
-function calculateCompositeScore(stock: Stock): number {
-  let score = 0;
-  
-  // Market Cap Score (40% weight) - Higher market cap = higher score
-  if (stock.market_cap && stock.market_cap > 0) {
-    // Log scale for market cap to prevent mega-caps from dominating
-    const marketCapScore = Math.log10(stock.market_cap) * 10;
-    score += marketCapScore * 0.4;
+async function fetchWithRetry(url: string, retries = 2): Promise<Response> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return response;
+      if (response.status === 429 && i < retries) {
+        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+        continue;
+      }
+      return response;
+    } catch (error) {
+      if (i === retries) throw error;
+      await new Promise(r => setTimeout(r, 1000));
+    }
   }
-  
-  // Trending Score (25% weight) - Direct trending score
-  if (stock.trending_score && stock.trending_score > 0) {
-    score += stock.trending_score * 0.25;
-  }
-  
-  // Performance Score (20% weight) - Recent 1-day return
-  if (stock.last_return_1d !== null) {
-    // Normalize performance: positive returns get bonus, cap extreme values
-    const performanceScore = Math.max(-5, Math.min(5, stock.last_return_1d || 0)) + 5;
-    score += performanceScore * 0.2;
-  }
-  
-  // Volume Activity Score (15% weight) - Relative volume indicates interest
-  if (stock.rel_volume && stock.rel_volume > 0) {
-    // Higher relative volume = more interest, cap at reasonable levels
-    const volumeScore = Math.min(10, stock.rel_volume);
-    score += volumeScore * 0.15;
-  }
-  
-  // Base score for having basic data
-  score += 1;
-  
-  return score;
+  throw new Error('Max retries exceeded');
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -67,104 +167,144 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
-    console.log('Starting top 100 ranking update...');
-
-    // Fetch all stocks with their current metrics
-    const { data: stocks, error: fetchError } = await supabaseClient
-      .from('stocks')
-      .select('id, symbol, name, market_cap, trending_score, last_return_1d, rel_volume, avg_volume')
-      .order('market_cap', { ascending: false, nullsLast: true });
-
-    if (fetchError) {
-      throw new Error(`Failed to fetch stocks: ${fetchError.message}`);
+    const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
+    if (!finnhubApiKey) {
+      throw new Error('FINNHUB_API_KEY not configured');
     }
 
-    if (!stocks || stocks.length === 0) {
-      throw new Error('No stocks found in database');
-    }
+    console.log('Starting top 100 update with real market data...');
 
-    console.log(`Processing ${stocks.length} stocks...`);
-
-    // Calculate composite scores for all stocks
-    const stocksWithScores: StockWithScore[] = stocks.map(stock => ({
-      ...stock,
-      composite_score: calculateCompositeScore(stock)
-    }));
-
-    // Sort by composite score (highest first)
-    stocksWithScores.sort((a, b) => b.composite_score - a.composite_score);
-
-    // Get top 100 stock IDs
-    const top100Stocks = stocksWithScores.slice(0, 100);
-    const top100Ids = top100Stocks.map(stock => stock.id);
-
-    console.log('Top 10 ranked stocks:');
-    top100Stocks.slice(0, 10).forEach((stock, index) => {
-      console.log(`${index + 1}. ${stock.symbol} (${stock.name}) - Score: ${stock.composite_score.toFixed(2)}`);
-    });
-
-    // First, clear all is_top_100 flags
-    const { error: clearError } = await supabaseClient
+    // First, clear old is_top_100 flags
+    await supabaseClient
       .from('stocks')
       .update({ is_top_100: false })
-      .neq('id', 0); // Update all rows
+      .neq('id', 0);
 
-    if (clearError) {
-      throw new Error(`Failed to clear top 100 flags: ${clearError.message}`);
-    }
+    const stockUpdates: Array<{
+      symbol: string;
+      name: string;
+      market_cap: number | null;
+      last_return_1d: number | null;
+    }> = [];
 
-    // Set is_top_100 = true for top 100 stocks and update their rank_score
-    const { error: updateError } = await supabaseClient
-      .from('stocks')
-      .update({ 
-        is_top_100: true,
-        last_ranked_at: new Date().toISOString()
-      })
-      .in('id', top100Ids);
-
-    if (updateError) {
-      throw new Error(`Failed to update top 100 flags: ${updateError.message}`);
-    }
-
-    // Update rank_score for all stocks based on their position
-    const updates = stocksWithScores.map((stock, index) => ({
-      id: stock.id,
-      rank_score: stock.composite_score,
-      last_ranked_at: new Date().toISOString()
-    }));
-
-    // Update in batches to avoid overwhelming the database
-    const batchSize = 100;
-    for (let i = 0; i < updates.length; i += batchSize) {
-      const batch = updates.slice(i, i + batchSize);
+    // Fetch data for each stock (batch in groups to avoid rate limits)
+    const batchSize = 10;
+    for (let i = 0; i < TOP_100_SYMBOLS.length; i += batchSize) {
+      const batch = TOP_100_SYMBOLS.slice(i, i + batchSize);
       
-      for (const update of batch) {
-        const { error: scoreError } = await supabaseClient
-          .from('stocks')
-          .update({ 
-            rank_score: update.rank_score,
-            last_ranked_at: update.last_ranked_at
-          })
-          .eq('id', update.id);
-
-        if (scoreError) {
-          console.error(`Failed to update rank_score for stock ${update.id}: ${scoreError.message}`);
+      const batchPromises = batch.map(async (symbol) => {
+        try {
+          // Fetch quote for price change
+          const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubApiKey}`;
+          const quoteResponse = await fetchWithRetry(quoteUrl);
+          
+          if (!quoteResponse.ok) {
+            console.log(`Quote failed for ${symbol}: ${quoteResponse.status}`);
+            return null;
+          }
+          
+          const quote: StockQuote = await quoteResponse.json();
+          
+          // Fetch company profile for market cap
+          const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubApiKey}`;
+          const profileResponse = await fetchWithRetry(profileUrl);
+          
+          let marketCap: number | null = null;
+          if (profileResponse.ok) {
+            const profile: CompanyProfile = await profileResponse.json();
+            // Finnhub returns market cap in millions
+            marketCap = profile.marketCapitalization ? profile.marketCapitalization * 1000000 : null;
+          }
+          
+          // Calculate 1-day return as decimal (e.g., 0.02 = 2%)
+          const lastReturn = quote.pc > 0 ? (quote.c - quote.pc) / quote.pc : null;
+          
+          return {
+            symbol,
+            name: COMPANY_NAMES[symbol] || symbol,
+            market_cap: marketCap,
+            last_return_1d: lastReturn
+          };
+        } catch (error) {
+          console.error(`Error fetching ${symbol}:`, error);
+          return {
+            symbol,
+            name: COMPANY_NAMES[symbol] || symbol,
+            market_cap: null,
+            last_return_1d: null
+          };
         }
+      });
+
+      const results = await Promise.all(batchPromises);
+      stockUpdates.push(...results.filter(r => r !== null));
+      
+      // Small delay between batches to respect rate limits
+      if (i + batchSize < TOP_100_SYMBOLS.length) {
+        await new Promise(r => setTimeout(r, 500));
       }
     }
 
-    console.log(`Successfully updated top 100 rankings. Top stock: ${top100Stocks[0]?.symbol} with score ${top100Stocks[0]?.composite_score.toFixed(2)}`);
+    console.log(`Fetched data for ${stockUpdates.length} stocks`);
+
+    // Upsert all stocks
+    for (const stock of stockUpdates) {
+      // Check if stock exists
+      const { data: existing } = await supabaseClient
+        .from('stocks')
+        .select('id')
+        .eq('symbol', stock.symbol)
+        .single();
+
+      if (existing) {
+        // Update existing
+        await supabaseClient
+          .from('stocks')
+          .update({
+            name: stock.name,
+            market_cap: stock.market_cap,
+            last_return_1d: stock.last_return_1d,
+            is_top_100: true,
+            last_ranked_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('symbol', stock.symbol);
+      } else {
+        // Insert new
+        await supabaseClient
+          .from('stocks')
+          .insert({
+            symbol: stock.symbol,
+            name: stock.name,
+            exchange: 'NASDAQ',
+            market_cap: stock.market_cap,
+            last_return_1d: stock.last_return_1d,
+            is_top_100: true,
+            last_ranked_at: new Date().toISOString()
+          });
+      }
+    }
+
+    // Get the top stocks by market cap for logging
+    const { data: topStocks } = await supabaseClient
+      .from('stocks')
+      .select('symbol, name, market_cap, last_return_1d')
+      .eq('is_top_100', true)
+      .order('market_cap', { ascending: false, nullsLast: true })
+      .limit(10);
+
+    console.log('Top 10 by market cap:', topStocks?.map(s => `${s.symbol}: $${(s.market_cap / 1e12).toFixed(2)}T`));
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Successfully updated top 100 rankings`,
-        top_stock: {
-          symbol: top100Stocks[0]?.symbol,
-          name: top100Stocks[0]?.name,
-          score: top100Stocks[0]?.composite_score
-        },
-        total_stocks_processed: stocks.length
+        message: `Successfully updated ${stockUpdates.length} stocks with real market data`,
+        top_stocks: topStocks?.slice(0, 5).map(s => ({
+          symbol: s.symbol,
+          name: s.name,
+          market_cap: s.market_cap,
+          change: s.last_return_1d
+        }))
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -172,7 +312,7 @@ Deno.serve(async (req) => {
       }
     )
   } catch (error) {
-    console.error('Top 100 ranking error:', error);
+    console.error('Top 100 update error:', error);
     return new Response(
       JSON.stringify({
         success: false,
