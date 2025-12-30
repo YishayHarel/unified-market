@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
+import NewsSentiment from "@/components/NewsSentiment";
 
 // Force cache refresh
 
@@ -130,31 +131,34 @@ const NewsSection = () => {
               <p className="text-muted-foreground mb-4">
                 {article.description}
               </p>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span>{article.source.name}</span>
-                  <span>•</span>
-                  <span>
-                    {new Date(article.publishedAt).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span>{article.source.name}</span>
+                    <span>•</span>
+                    <span>
+                      {new Date(article.publishedAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  <Button variant="outline" size="sm" asChild>
+                    <a 
+                      href={article.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2"
+                    >
+                      Read More
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </Button>
                 </div>
-                <Button variant="outline" size="sm" asChild>
-                  <a 
-                    href={article.url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2"
-                  >
-                    Read More
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </Button>
-              </div>
+                
+                {/* Bull/Bear Sentiment */}
+                <NewsSentiment newsUrl={article.url} newsTitle={article.title} />
             </CardContent>
           </Card>
         ))}

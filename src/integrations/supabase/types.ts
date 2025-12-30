@@ -188,6 +188,39 @@ export type Database = {
           },
         ]
       }
+      news_sentiment: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          news_title: string
+          news_url: string
+          sentiment: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          news_title: string
+          news_url: string
+          sentiment: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          news_title?: string
+          news_url?: string
+          sentiment?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       portfolio_holdings: {
         Row: {
           avg_cost: number

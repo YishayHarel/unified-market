@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Newspaper, ExternalLink, Clock, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import NewsSentiment from "@/components/NewsSentiment";
 
 interface StockNewsProps {
   symbol: string;
@@ -192,6 +193,9 @@ const StockNews = ({ symbol, companyName }: StockNewsProps) => {
                   </div>
                 </div>
               </div>
+              
+              {/* Bull/Bear Sentiment */}
+              <NewsSentiment newsUrl={article.url} newsTitle={article.title} />
             </div>
           </div>
         ))}
