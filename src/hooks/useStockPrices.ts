@@ -21,7 +21,7 @@ export interface StockPrice {
  * Prevents duplicate API calls for the same symbols
  */
 const priceCache = new Map<string, { data: StockPrice; timestamp: number }>();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
+const CACHE_TTL_MS = 60 * 1000; // 1 minute cache for real-time feel
 
 /**
  * Pending requests tracker to prevent duplicate in-flight requests

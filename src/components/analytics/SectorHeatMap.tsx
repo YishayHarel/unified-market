@@ -46,21 +46,23 @@ const SectorHeatMap = () => {
   };
 
   const getHeatColor = (change: number): string => {
-    // Extended range to +-5%
-    if (change > 4) return "bg-green-700";
-    if (change > 3) return "bg-green-600";
-    if (change > 2) return "bg-green-500";
-    if (change > 1) return "bg-green-400";
-    if (change > 0) return "bg-green-300";
-    if (change > -1) return "bg-red-300";
-    if (change > -2) return "bg-red-400";
-    if (change > -3) return "bg-red-500";
-    if (change > -4) return "bg-red-600";
-    return "bg-red-700";
+    // Extended range to +-5% with better contrast near 0
+    if (change >= 4) return "bg-emerald-600";
+    if (change >= 3) return "bg-emerald-500";
+    if (change >= 2) return "bg-green-500";
+    if (change >= 1) return "bg-green-600";
+    if (change >= 0.3) return "bg-green-700";
+    if (change >= 0) return "bg-green-800";
+    if (change >= -0.3) return "bg-red-800";
+    if (change >= -1) return "bg-red-700";
+    if (change >= -2) return "bg-red-600";
+    if (change >= -3) return "bg-red-500";
+    if (change >= -4) return "bg-rose-500";
+    return "bg-rose-600";
   };
 
-  const getTextColor = (change: number): string => {
-    return Math.abs(change) > 0.5 ? "text-white" : "text-foreground";
+  const getTextColor = (): string => {
+    return "text-white";
   };
 
   if (loading && prices.size === 0) {
@@ -115,7 +117,7 @@ const SectorHeatMap = () => {
           {sectors.map((sector) => (
             <div
               key={sector.symbol}
-              className={`${getHeatColor(sector.change)} ${getTextColor(sector.change)} rounded-lg p-3 transition-all hover:scale-105 cursor-pointer`}
+              className={`${getHeatColor(sector.change)} ${getTextColor()} rounded-lg p-3 transition-all hover:scale-105 cursor-pointer`}
             >
               <div className="font-bold text-sm truncate">{sector.name}</div>
               <div className="text-xs opacity-80">{sector.symbol}</div>
@@ -133,16 +135,18 @@ const SectorHeatMap = () => {
         <div className="flex items-center justify-center gap-1 mt-4 text-xs text-muted-foreground">
           <span>-5%</span>
           <div className="flex gap-0.5">
-            <div className="w-3 h-3 bg-red-700 rounded-sm" />
-            <div className="w-3 h-3 bg-red-600 rounded-sm" />
+            <div className="w-3 h-3 bg-rose-600 rounded-sm" />
+            <div className="w-3 h-3 bg-rose-500 rounded-sm" />
             <div className="w-3 h-3 bg-red-500 rounded-sm" />
-            <div className="w-3 h-3 bg-red-400 rounded-sm" />
-            <div className="w-3 h-3 bg-red-300 rounded-sm" />
-            <div className="w-3 h-3 bg-green-300 rounded-sm" />
-            <div className="w-3 h-3 bg-green-400 rounded-sm" />
-            <div className="w-3 h-3 bg-green-500 rounded-sm" />
-            <div className="w-3 h-3 bg-green-600 rounded-sm" />
+            <div className="w-3 h-3 bg-red-600 rounded-sm" />
+            <div className="w-3 h-3 bg-red-700 rounded-sm" />
+            <div className="w-3 h-3 bg-red-800 rounded-sm" />
+            <div className="w-3 h-3 bg-green-800 rounded-sm" />
             <div className="w-3 h-3 bg-green-700 rounded-sm" />
+            <div className="w-3 h-3 bg-green-600 rounded-sm" />
+            <div className="w-3 h-3 bg-green-500 rounded-sm" />
+            <div className="w-3 h-3 bg-emerald-500 rounded-sm" />
+            <div className="w-3 h-3 bg-emerald-600 rounded-sm" />
           </div>
           <span>+5%</span>
         </div>
