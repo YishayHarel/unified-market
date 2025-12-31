@@ -150,7 +150,7 @@ const MarketSentimentDashboard = () => {
                     className="w-full" 
                   />
                   <div className="text-xs text-muted-foreground">
-                    VIX Level: {sentimentData.fearGreedIndex.vixLevel.toFixed(2)}
+                    VIX Level: {sentimentData.fearGreedIndex.vixLevel?.toFixed(2) ?? 'N/A'}
                   </div>
                 </div>
               </CardContent>
@@ -190,7 +190,7 @@ const MarketSentimentDashboard = () => {
                       </span>
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      ${sentimentData.marketMomentum.spyPrice.toFixed(2)}
+                      ${sentimentData.marketMomentum.spyPrice?.toFixed(2) ?? 'N/A'}
                     </div>
                   </div>
                 </div>
@@ -220,11 +220,11 @@ const MarketSentimentDashboard = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="text-2xl font-bold">
-                      {sentimentData.indicators.vix.level.toFixed(2)}
+                      {sentimentData.indicators.vix.level?.toFixed(2) ?? 'N/A'}
                     </div>
-                    <div className={`flex items-center gap-1 ${getChangeColor(sentimentData.indicators.vix.change)}`}>
-                      {getChangeIcon(sentimentData.indicators.vix.change)}
-                      <span>{sentimentData.indicators.vix.change.toFixed(2)}</span>
+                    <div className={`flex items-center gap-1 ${getChangeColor(sentimentData.indicators.vix.change ?? 0)}`}>
+                      {getChangeIcon(sentimentData.indicators.vix.change ?? 0)}
+                      <span>{sentimentData.indicators.vix.change?.toFixed(2) ?? 'N/A'}</span>
                     </div>
                   </div>
                 </div>
@@ -249,7 +249,7 @@ const MarketSentimentDashboard = () => {
                         <div className="flex items-center gap-1 text-green-500">
                           <TrendingUp className="h-3 w-3" />
                           <span className="text-sm font-medium">
-                            {sector.change.toFixed(2)}%
+                            {sector.change?.toFixed(2) ?? '0.00'}%
                           </span>
                         </div>
                       </div>
@@ -265,7 +265,7 @@ const MarketSentimentDashboard = () => {
                         <div className="flex items-center gap-1 text-red-500">
                           <TrendingDown className="h-3 w-3" />
                           <span className="text-sm font-medium">
-                            {sector.change.toFixed(2)}%
+                            {sector.change?.toFixed(2) ?? '0.00'}%
                           </span>
                         </div>
                       </div>
