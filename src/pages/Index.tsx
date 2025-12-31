@@ -5,6 +5,7 @@ import { LogOut, User } from "lucide-react";
 import TopMovers from "@/components/TopMovers";
 import NewsSection from "@/components/NewsSection";
 import StockSearch from "@/components/StockSearch";
+import HeaderMenu from "@/components/HeaderMenu";
 import bullLogo from "@/assets/bull-logo.png";
 
 const Index = () => {
@@ -15,17 +16,20 @@ const Index = () => {
       <div className="bg-background relative overflow-hidden">
         <div className="relative p-6 pb-12 space-y-8">
           <header className="text-center relative max-w-4xl mx-auto">
-            {user && (
-              <div className="absolute top-0 right-0 flex items-center gap-3">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground bg-card px-3 py-2 rounded-full shadow-card">
-                  <User className="w-4 h-4 text-primary" />
-                  <span className="font-medium">{user.email}</span>
-                </div>
-                <Button variant="outline" size="sm" onClick={signOut} className="shadow-card">
-                  <LogOut className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
+            <div className="absolute top-0 right-0 flex items-center gap-2">
+              {user && (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground bg-card px-3 py-2 rounded-full shadow-card">
+                    <User className="w-4 h-4 text-primary" />
+                    <span className="font-medium">{user.email}</span>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={signOut} className="shadow-card">
+                    <LogOut className="w-4 h-4" />
+                  </Button>
+                </>
+              )}
+              <HeaderMenu />
+            </div>
             
             <div className="space-y-4">
               <div className="flex items-center justify-center gap-4">
