@@ -5,10 +5,8 @@ import { cn } from "@/lib/utils";
 const navigationItems = [
   { name: "Home", path: "/", icon: Home },
   { name: "Analytics", path: "/analytics", icon: BarChart3 },
-  { name: "Earnings", path: "/earnings", icon: Calendar },
   { name: "Markets", path: "/markets", icon: TrendingUp },
   { name: "Social", path: "/social", icon: Users },
-  { name: "YishAI", path: "/yishai", icon: Bot },
   { name: "Settings", path: "/settings", icon: Settings },
 ];
 
