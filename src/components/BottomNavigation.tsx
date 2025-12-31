@@ -22,7 +22,7 @@ const BottomNavigation = () => {
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border z-50">
       <ScrollArea className="w-full">
-        <div className="flex items-center px-2 py-2 gap-1">
+        <div className="flex items-center justify-center px-2 py-2 gap-1 min-w-max mx-auto">
           {navigationItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
