@@ -46,18 +46,21 @@ const SectorHeatMap = () => {
   };
 
   const getHeatColor = (change: number): string => {
-    if (change > 2) return "bg-green-600";
-    if (change > 1) return "bg-green-500";
-    if (change > 0.5) return "bg-green-400";
+    // Extended range to +-5%
+    if (change > 4) return "bg-green-700";
+    if (change > 3) return "bg-green-600";
+    if (change > 2) return "bg-green-500";
+    if (change > 1) return "bg-green-400";
     if (change > 0) return "bg-green-300";
-    if (change > -0.5) return "bg-red-300";
-    if (change > -1) return "bg-red-400";
-    if (change > -2) return "bg-red-500";
-    return "bg-red-600";
+    if (change > -1) return "bg-red-300";
+    if (change > -2) return "bg-red-400";
+    if (change > -3) return "bg-red-500";
+    if (change > -4) return "bg-red-600";
+    return "bg-red-700";
   };
 
   const getTextColor = (change: number): string => {
-    return Math.abs(change) > 1 ? "text-white" : "text-foreground";
+    return Math.abs(change) > 0.5 ? "text-white" : "text-foreground";
   };
 
   if (loading && prices.size === 0) {
@@ -128,18 +131,20 @@ const SectorHeatMap = () => {
 
         {/* Legend */}
         <div className="flex items-center justify-center gap-1 mt-4 text-xs text-muted-foreground">
-          <span>-3%</span>
+          <span>-5%</span>
           <div className="flex gap-0.5">
-            <div className="w-4 h-3 bg-red-600 rounded-sm" />
-            <div className="w-4 h-3 bg-red-500 rounded-sm" />
-            <div className="w-4 h-3 bg-red-400 rounded-sm" />
-            <div className="w-4 h-3 bg-red-300 rounded-sm" />
-            <div className="w-4 h-3 bg-green-300 rounded-sm" />
-            <div className="w-4 h-3 bg-green-400 rounded-sm" />
-            <div className="w-4 h-3 bg-green-500 rounded-sm" />
-            <div className="w-4 h-3 bg-green-600 rounded-sm" />
+            <div className="w-3 h-3 bg-red-700 rounded-sm" />
+            <div className="w-3 h-3 bg-red-600 rounded-sm" />
+            <div className="w-3 h-3 bg-red-500 rounded-sm" />
+            <div className="w-3 h-3 bg-red-400 rounded-sm" />
+            <div className="w-3 h-3 bg-red-300 rounded-sm" />
+            <div className="w-3 h-3 bg-green-300 rounded-sm" />
+            <div className="w-3 h-3 bg-green-400 rounded-sm" />
+            <div className="w-3 h-3 bg-green-500 rounded-sm" />
+            <div className="w-3 h-3 bg-green-600 rounded-sm" />
+            <div className="w-3 h-3 bg-green-700 rounded-sm" />
           </div>
-          <span>+3%</span>
+          <span>+5%</span>
         </div>
 
         {error && (
