@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { TrendingUp, TrendingDown, Activity, BarChart3, AlertTriangle } from "lucide-react";
+import YieldAndVixCharts from "@/components/analytics/YieldAndVixCharts";
 
 interface MarketSentiment {
   fearGreedIndex: {
@@ -277,6 +278,9 @@ const MarketSentimentDashboard = () => {
           </Card>
         </CardContent>
       </Card>
+
+      {/* Yield and VIX Charts */}
+      <YieldAndVixCharts />
     </div>
   );
 };
