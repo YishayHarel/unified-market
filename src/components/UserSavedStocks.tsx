@@ -188,7 +188,7 @@ const UserSavedStocks = () => {
                         <span className="font-medium">${priceData.price.toFixed(2)}</span>
                         <span className={`flex items-center text-sm ${isPositive ? 'text-primary' : 'text-destructive'}`}>
                           {isPositive ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
-                          {isPositive ? '+' : ''}{priceData.changePercent.toFixed(2)}%
+                          {isPositive ? '+' : ''}{(priceData.changePercent ?? 0).toFixed(2)}%
                         </span>
                       </div>
                     ) : pricesLoading ? (
