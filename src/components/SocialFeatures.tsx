@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import UserAutocomplete from "@/components/UserAutocomplete";
 
 interface FollowedUser {
   user_id: string;
@@ -235,33 +235,19 @@ const SocialFeatures = () => {
     }
   };
 
-  const searchUsers = async () => {
-    if (!searchQuery.trim()) return;
+  const handleUserSelect = (selectedUser: { user_id: string; display_name: string | null }) => {
+    // Add the selected user to search results if not already there
+    const newResult: FollowedUser = {
+      user_id: selectedUser.user_id,
+      display_name: selectedUser.display_name || 'Anonymous',
+      posts_count: 0,
+      replies_count: 0,
+      followers_count: 0
+    };
 
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('user_id, display_name')
-        .ilike('display_name', `%${searchQuery}%`)
-        .neq('user_id', user?.id || '')
-        .limit(10);
-
-      if (error) throw error;
-
-      const results: FollowedUser[] = (data || []).map(u => ({
-        user_id: u.user_id,
-        display_name: u.display_name || 'Anonymous',
-        posts_count: 0,
-        replies_count: 0,
-        followers_count: 0
-      }));
-
-      setSearchResults(results);
-    } catch (error) {
-      console.error('Error searching users:', error);
-    } finally {
-      setLoading(false);
+    // Only add if not already in results
+    if (!searchResults.some(u => u.user_id === selectedUser.user_id)) {
+      setSearchResults([newResult, ...searchResults]);
     }
   };
 
@@ -345,17 +331,13 @@ const SocialFeatures = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-2">
-            <Input
-              placeholder="Search by name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && searchUsers()}
-            />
-            <Button onClick={searchUsers} disabled={loading}>
-              Search
-            </Button>
-          </div>
+          <UserAutocomplete
+            value={searchQuery}
+            onChange={setSearchQuery}
+            onSelect={handleUserSelect}
+            placeholder="Search traders by name..."
+            excludeUserIds={user ? [user.id] : []}
+          />
           
           {searchResults.length > 0 && (
             <div className="space-y-2">
