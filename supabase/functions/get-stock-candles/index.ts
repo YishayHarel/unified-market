@@ -437,26 +437,44 @@ serve(async (req) => {
       const to = Math.floor(Date.now() / 1000);
       const from = to - (fromDays * 24 * 60 * 60);
 
-      // Try Finnhub first (best for stocks, but returns 403 for ETFs)
-      candles = finnhubKey
-        ? await fetchFinnhubCandles(normalizedSymbol, resolution, from, to, finnhubKey)
-        : null;
+      // ETFs that Finnhub doesn't support well - use Alpha Vantage as PRIMARY for these
+      const etfSymbols = ['SHY', 'IEF', 'UVXY', 'TLT', 'SPY', 'QQQ', 'VXX', 'VIXY'];
+      const isEtf = etfSymbols.includes(normalizedSymbol);
 
-      // Fallback to Twelve Data (good for ETFs, but has per-minute rate limit)
-      if (!candles && twelveDataKey) {
-        candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize, twelveDataKey);
-      }
-
-      // Third fallback: Alpha Vantage (good for ETFs, separate rate limit pool)
-      if (!candles && alphaVantageKey) {
-        // Alpha Vantage only provides daily data; use 'compact' for recent 100 days, 'full' for more
+      if (isEtf && alphaVantageKey) {
+        // PRIMARY for ETFs: Alpha Vantage (Finnhub returns 403, Twelve Data has tight rate limits)
+        console.log(`Using Alpha Vantage as primary for ETF: ${normalizedSymbol}`);
         const avOutputsize = fromDays > 100 ? 'full' : 'compact';
         const avCandles = await fetchAlphaVantageCandles(normalizedSymbol, avOutputsize, alphaVantageKey);
         
         if (avCandles && avCandles.length > 0) {
-          // Filter to match requested period
           const cutoffTime = Date.now() - (fromDays * 24 * 60 * 60 * 1000);
           candles = avCandles.filter(c => c.timestamp >= cutoffTime);
+        }
+
+        // Fallback to Twelve Data if Alpha Vantage fails for ETF
+        if (!candles && twelveDataKey) {
+          candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize, twelveDataKey);
+        }
+      } else {
+        // PRIMARY for stocks: Finnhub → Twelve Data → Alpha Vantage
+        candles = finnhubKey
+          ? await fetchFinnhubCandles(normalizedSymbol, resolution, from, to, finnhubKey)
+          : null;
+
+        if (!candles && twelveDataKey) {
+          candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize, twelveDataKey);
+        }
+
+        // Third fallback: Alpha Vantage
+        if (!candles && alphaVantageKey) {
+          const avOutputsize = fromDays > 100 ? 'full' : 'compact';
+          const avCandles = await fetchAlphaVantageCandles(normalizedSymbol, avOutputsize, alphaVantageKey);
+          
+          if (avCandles && avCandles.length > 0) {
+            const cutoffTime = Date.now() - (fromDays * 24 * 60 * 60 * 1000);
+            candles = avCandles.filter(c => c.timestamp >= cutoffTime);
+          }
         }
       }
 
