@@ -35,14 +35,20 @@ serve(async (req) => {
       throw new Error('FINNHUB_API_KEY not found')
     }
 
-    // Fetch basic financials from Finnhub
-    const [basicFinancialsResponse, profileResponse] = await Promise.all([
+    // Fetch basic financials, profile, recommendations, price targets, and quote from Finnhub
+    const [basicFinancialsResponse, profileResponse, recommendationResponse, priceTargetResponse, quoteResponse] = await Promise.all([
       fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${finnhubKey}`),
-      fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubKey}`)
+      fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubKey}`),
+      fetch(`https://finnhub.io/api/v1/stock/recommendation?symbol=${symbol}&token=${finnhubKey}`),
+      fetch(`https://finnhub.io/api/v1/stock/price-target?symbol=${symbol}&token=${finnhubKey}`),
+      fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`)
     ]);
 
     let fundamentals = {};
     let profile = {};
+    let recommendationTrends = [];
+    let priceTarget = null;
+    let quote = null;
 
     if (basicFinancialsResponse.ok) {
       const basicData = await basicFinancialsResponse.json();
@@ -60,6 +66,30 @@ serve(async (req) => {
       console.error(`Error fetching profile for ${symbol}: ${profileResponse.status}`);
     }
 
+    if (recommendationResponse.ok) {
+      const recommendationData = await recommendationResponse.json();
+      console.log(`Recommendations for ${symbol}:`, recommendationData);
+      recommendationTrends = recommendationData || [];
+    } else {
+      console.error(`Error fetching recommendations for ${symbol}: ${recommendationResponse.status}`);
+    }
+
+    if (priceTargetResponse.ok) {
+      const priceTargetData = await priceTargetResponse.json();
+      console.log(`Price target for ${symbol}:`, priceTargetData);
+      priceTarget = priceTargetData;
+    } else {
+      console.error(`Error fetching price target for ${symbol}: ${priceTargetResponse.status}`);
+    }
+
+    if (quoteResponse.ok) {
+      const quoteData = await quoteResponse.json();
+      console.log(`Quote for ${symbol}:`, quoteData);
+      quote = quoteData;
+    } else {
+      console.error(`Error fetching quote for ${symbol}: ${quoteResponse.status}`);
+    }
+
     // Extract the key metrics we need
     const result = {
       symbol,
@@ -75,7 +105,11 @@ serve(async (req) => {
       sector: (profile as any).gind || null,
       employeeCount: (profile as any).employeeTotal || null,
       sharesOutstanding: (profile as any).shareOutstanding || null,
-      bookValue: (fundamentals as any).bookValuePerShareAnnual || null
+      bookValue: (fundamentals as any).bookValuePerShareAnnual || null,
+      // Add recommendation trends and price targets
+      recommendationTrends,
+      priceTarget,
+      quote
     };
 
     console.log(`Returning fundamentals for ${symbol}:`, result);
