@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface StockData {
   symbol: string;
@@ -40,20 +42,13 @@ const TopMovers = () => {
           // Take top 3
           setTopStocks(sorted.slice(0, 3));
         } else {
-          // Fallback to some default symbols
-          setTopStocks([
-            { symbol: 'AAPL', name: 'Apple Inc.', last_return_1d: 0.02 },
-            { symbol: 'MSFT', name: 'Microsoft Corporation', last_return_1d: 0.015 },
-            { symbol: 'GOOGL', name: 'Alphabet Inc.', last_return_1d: -0.01 },
-          ]);
+          // No data available - show empty state
+          setTopStocks([]);
         }
       } catch (error) {
         console.error('Error fetching top movers from DB:', error);
-        setTopStocks([
-          { symbol: 'AAPL', name: 'Apple Inc.', last_return_1d: 0.02 },
-          { symbol: 'MSFT', name: 'Microsoft Corporation', last_return_1d: 0.015 },
-          { symbol: 'GOOGL', name: 'Alphabet Inc.', last_return_1d: -0.01 },
-        ]);
+        // Don't show fake data - show empty state
+        setTopStocks([]);
       } finally {
         setLoading(false);
       }
@@ -84,6 +79,23 @@ const TopMovers = () => {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (topStocks.length === 0) {
+    return (
+      <section>
+        <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>
+        <div className="bg-card p-6 rounded-lg border border-border text-center">
+          <AlertTriangle className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-muted-foreground font-medium">Unable to load market movers</p>
+          <p className="text-sm text-muted-foreground mb-4">Please try again later</p>
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
         </div>
       </section>
     );
