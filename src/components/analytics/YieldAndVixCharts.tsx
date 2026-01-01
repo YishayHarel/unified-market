@@ -35,57 +35,60 @@ const YieldAndVixCharts = () => {
   const [tenYearData, setTenYearData] = useState<SymbolData | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<string>("1M");
 
+  const fetchSingleSymbol = async (symbol: string, name: string): Promise<SymbolData | null> => {
+    const { data, error } = await supabase.functions.invoke("get-stock-candles", {
+      body: { symbol, period: selectedPeriod, includeIndicators: false },
+    });
+
+    if (error || !data?.candles?.length) {
+      console.error(`Error fetching ${symbol}:`, error);
+      return null;
+    }
+
+    const candles = data.candles;
+    const chartData: ChartData[] = candles.map((c: any) => ({
+      date: new Date(c.timestamp).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+      value: c.close,
+    }));
+
+    const firstPrice = candles[0]?.close || 0;
+    const lastPrice = candles[candles.length - 1]?.close || 0;
+    const change = lastPrice - firstPrice;
+    const changePercent = firstPrice > 0 ? (change / firstPrice) * 100 : 0;
+
+    return {
+      symbol,
+      name,
+      data: chartData,
+      currentPrice: lastPrice,
+      change,
+      changePercent,
+    };
+  };
+
   const fetchChartData = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // Fetch data for VIX proxy (UVXY), 2Y Treasury proxy (SHY), and 10Y Treasury proxy (IEF)
-      const symbols = [
-        { symbol: "UVXY", name: "VIX Volatility Index (UVXY Proxy)" },
-        { symbol: "SHY", name: "2-Year Treasury Yield (SHY Proxy)" },
-        { symbol: "IEF", name: "10-Year Treasury Yield (IEF Proxy)" },
-      ];
+      // Fetch sequentially to avoid hitting Twelve Data's per-minute rate limit (8 credits)
+      // Since Finnhub returns 403 for ETFs, all requests fall back to Twelve Data
+      const vix = await fetchSingleSymbol("UVXY", "VIX Volatility Index (UVXY Proxy)");
+      setVixData(vix);
 
-      const results = await Promise.all(
-        symbols.map(async ({ symbol, name }) => {
-          const { data, error } = await supabase.functions.invoke("get-stock-candles", {
-            body: { symbol, period: selectedPeriod, includeIndicators: false },
-          });
+      // Small delay to spread API calls across time
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const twoYear = await fetchSingleSymbol("SHY", "2-Year Treasury Yield (SHY Proxy)");
+      setTwoYearData(twoYear);
 
-          if (error || !data?.candles?.length) {
-            console.error(`Error fetching ${symbol}:`, error);
-            return null;
-          }
-
-          const candles = data.candles;
-          const chartData: ChartData[] = candles.map((c: any) => ({
-            date: new Date(c.timestamp).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            }),
-            value: c.close,
-          }));
-
-          const firstPrice = candles[0]?.close || 0;
-          const lastPrice = candles[candles.length - 1]?.close || 0;
-          const change = lastPrice - firstPrice;
-          const changePercent = firstPrice > 0 ? (change / firstPrice) * 100 : 0;
-
-          return {
-            symbol,
-            name,
-            data: chartData,
-            currentPrice: lastPrice,
-            change,
-            changePercent,
-          };
-        })
-      );
-
-      setVixData(results[0]);
-      setTwoYearData(results[1]);
-      setTenYearData(results[2]);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const tenYear = await fetchSingleSymbol("IEF", "10-Year Treasury Yield (IEF Proxy)");
+      setTenYearData(tenYear);
     } catch (err) {
       console.error("Error fetching chart data:", err);
       setError("Failed to load chart data");
