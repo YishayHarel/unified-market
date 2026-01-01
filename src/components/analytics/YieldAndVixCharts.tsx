@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
 import { TrendingUp, TrendingDown, RefreshCw, Loader2, BarChart3, Activity } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -20,6 +20,12 @@ interface SymbolData {
   change: number;
   changePercent: number;
 }
+
+const chartColors = {
+  vix: "hsl(var(--chart-vix))",
+  twoYear: "hsl(var(--chart-2y))",
+  tenYear: "hsl(var(--chart-10y))",
+};
 
 const YieldAndVixCharts = () => {
   const [loading, setLoading] = useState(true);
@@ -54,7 +60,7 @@ const YieldAndVixCharts = () => {
 
           const candles = data.candles;
           const chartData: ChartData[] = candles.map((c: any) => ({
-            date: new Date(c.timestamp * 1000).toLocaleDateString("en-US", {
+            date: new Date(c.timestamp).toLocaleDateString("en-US", {
               month: "short",
               day: "numeric",
             }),
@@ -108,7 +114,7 @@ const YieldAndVixCharts = () => {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-2xl font-bold">${data.currentPrice.toFixed(2)}</div>
-            <div className={`flex items-center gap-1 text-sm ${isPositive ? "text-green-500" : "text-red-500"}`}>
+            <div className={`flex items-center gap-1 text-sm ${isPositive ? "text-primary" : "text-destructive"}`}>
               {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
               <span>
                 {isPositive ? "+" : ""}
@@ -221,7 +227,7 @@ const YieldAndVixCharts = () => {
           Treasury Yields & Volatility
         </h3>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-green-500 border-green-500">
+          <Badge variant="outline" className="text-primary border-primary">
             Live Data
           </Badge>
           <Tabs value={selectedPeriod} onValueChange={setSelectedPeriod}>
@@ -242,11 +248,11 @@ const YieldAndVixCharts = () => {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
-            <Activity className="h-4 w-4 text-orange-500" />
+            <Activity className="h-4 w-4" style={{ color: chartColors.vix }} />
             VIX Volatility Index
           </CardTitle>
         </CardHeader>
-        <CardContent>{renderChart(vixData, "#f97316", true)}</CardContent>
+        <CardContent>{renderChart(vixData, chartColors.vix, true)}</CardContent>
       </Card>
 
       {/* Treasury Yield Charts */}
@@ -254,21 +260,21 @@ const YieldAndVixCharts = () => {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-blue-500" />
+              <TrendingUp className="h-4 w-4" style={{ color: chartColors.twoYear }} />
               2-Year Treasury (SHY)
             </CardTitle>
           </CardHeader>
-          <CardContent>{renderChart(twoYearData, "#3b82f6")}</CardContent>
+          <CardContent>{renderChart(twoYearData, chartColors.twoYear)}</CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-purple-500" />
+              <TrendingUp className="h-4 w-4" style={{ color: chartColors.tenYear }} />
               10-Year Treasury (IEF)
             </CardTitle>
           </CardHeader>
-          <CardContent>{renderChart(tenYearData, "#8b5cf6")}</CardContent>
+          <CardContent>{renderChart(tenYearData, chartColors.tenYear)}</CardContent>
         </Card>
       </div>
 
@@ -281,9 +287,9 @@ const YieldAndVixCharts = () => {
                 <div className="text-sm text-muted-foreground">Yield Curve Indicator</div>
                 <div className="text-lg font-semibold">
                   {tenYearData.currentPrice > twoYearData.currentPrice ? (
-                    <span className="text-green-500">Normal (IEF {">"} SHY)</span>
+                    <span className="text-primary">Normal (IEF {">"} SHY)</span>
                   ) : (
-                    <span className="text-red-500">Inverted (SHY {">"} IEF)</span>
+                    <span className="text-destructive">Inverted (SHY {">"} IEF)</span>
                   )}
                 </div>
               </div>
