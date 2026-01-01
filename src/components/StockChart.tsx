@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface StockChartProps {
   symbol: string;
@@ -22,189 +25,111 @@ interface HoverData {
   x: number;
 }
 
-/**
- * Gets the most recent market close time (4:00 PM ET)
- * If market is open, returns today at 4pm ET
- * If weekend/after hours, returns the last trading day
- */
-const getMarketCloseTime = (): Date => {
-  const now = new Date();
-  const etOffset = -5; // EST offset (simplified - doesn't account for DST)
-  const utcHours = now.getUTCHours();
-  const etHours = (utcHours + etOffset + 24) % 24;
-  const dayOfWeek = now.getUTCDay();
-  
-  // Create a date object for 4:00 PM ET today
-  const closeTime = new Date(now);
-  closeTime.setUTCHours(16 - etOffset, 0, 0, 0); // 4:00 PM ET = 21:00 UTC (winter)
-  
-  // If it's before market close, use previous trading day
-  if (now < closeTime || dayOfWeek === 0 || dayOfWeek === 6) {
-    // Go back to find last trading day
-    let daysBack = 1;
-    if (dayOfWeek === 0) daysBack = 2; // Sunday -> Friday
-    if (dayOfWeek === 6) daysBack = 1; // Saturday -> Friday
-    if (dayOfWeek === 1 && now < closeTime) daysBack = 3; // Monday before close -> Friday
-    
-    closeTime.setDate(closeTime.getDate() - daysBack);
-  }
-  
-  return closeTime;
-};
-
 const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockChartProps) => {
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [hoverData, setHoverData] = useState<HoverData | null>(null);
   const [isHovering, setIsHovering] = useState(false);
   const [dayStartPrice, setDayStartPrice] = useState<number>(currentPrice);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const fetchCandles = useCallback(async () => {
     setLoading(true);
+    setError(null);
     
-    const generateRealtimeData = (period: string, currentPrice: number) => {
-      const marketClose = getMarketCloseTime();
-      const data: ChartData[] = [];
-      let basePrice = currentPrice || 100;
-      let points = 50;
-      let intervalMinutes = 5;
+    try {
+      const { data, error: fetchError } = await supabase.functions.invoke('get-stock-candles', {
+        body: { symbol: symbol.toUpperCase(), period }
+      });
       
-      // Market opens at 9:30 AM ET, closes at 4:00 PM ET = 390 minutes of trading
-      const tradingDayMinutes = 390;
-      
-      switch (period) {
-        case '1H':
-          points = 12; // 12 points for 1 hour (5-min intervals)
-          intervalMinutes = 5;
-          break;
-        case '1D':
-          points = 78; // Trading day ~6.5 hours * 12 (5-min intervals)
-          intervalMinutes = 5;
-          break;
-        case '1W':
-          points = 35; // 5 trading days, hourly
-          intervalMinutes = 60;
-          break;
-        case '1M':
-          points = 22; // ~22 trading days
-          intervalMinutes = 60 * 24;
-          break;
-        case '3M':
-          points = 66; // ~66 trading days
-          intervalMinutes = 60 * 24;
-          break;
-        case '1Y':
-          points = 252; // Trading days in a year
-          intervalMinutes = 60 * 24;
-          break;
-        case 'MAX':
-          points = 1260; // 5 years of trading days
-          intervalMinutes = 60 * 24;
-          break;
+      if (fetchError) {
+        throw new Error(fetchError.message || 'Failed to fetch chart data');
       }
-
-      const volatility = period === '1H' ? 0.3 : period === '1D' ? 0.8 : 1.2;
-      const targetEndPrice = currentPrice || basePrice;
-      const totalChange = dayChange || 0;
       
-      for (let i = points; i >= 0; i--) {
-        const time = new Date(marketClose);
+      if (!data?.candles || data.candles.length === 0) {
+        setError('No chart data available for this period');
+        setChartData([]);
+        return;
+      }
+      
+      // Transform candle data to chart format
+      const candles = data.candles;
+      const transformedData: ChartData[] = candles.map((candle: any) => {
+        const date = new Date(candle.timestamp);
         
-        if (period === '1D' || period === '1H') {
-          // For intraday, work backwards from market close (4:00 PM ET)
-          const minutesFromClose = i * intervalMinutes;
-          time.setMinutes(time.getMinutes() - minutesFromClose);
-          
-          // Don't go before market open (9:30 AM ET)
-          const marketOpen = new Date(marketClose);
-          marketOpen.setHours(marketOpen.getHours() - 6, marketOpen.getMinutes() - 30);
-          if (time < marketOpen) continue;
-        } else {
-          // For multi-day periods, subtract trading days
-          time.setDate(time.getDate() - i);
-        }
-
-        // Calculate price progression
-        const progress = (points - i) / points;
-        const trend = totalChange * progress;
-        const randomWalk = (Math.random() - 0.5) * volatility;
-        
-        if (i === 0) {
-          basePrice = targetEndPrice;
-        } else {
-          basePrice = (targetEndPrice - totalChange) + trend + randomWalk;
-        }
-        
-        basePrice = Math.max(basePrice, targetEndPrice * 0.8);
-        basePrice = Math.min(basePrice, targetEndPrice * 1.2);
-
         let formattedTime = '';
         let formattedDate = '';
         
         if (period === '1H' || period === '1D') {
-          formattedTime = time.toLocaleTimeString('en-US', { 
+          formattedTime = date.toLocaleTimeString('en-US', { 
             hour: 'numeric', 
             minute: '2-digit',
             timeZone: 'America/New_York'
           });
-          formattedDate = time.toLocaleDateString('en-US', { 
+          formattedDate = date.toLocaleDateString('en-US', { 
             month: 'short', 
             day: 'numeric',
             timeZone: 'America/New_York'
           });
         } else if (period === '1W' || period === '1M') {
-          formattedTime = time.toLocaleDateString('en-US', { 
+          formattedTime = date.toLocaleDateString('en-US', { 
             month: 'short', 
             day: 'numeric' 
           });
-          formattedDate = time.toLocaleDateString('en-US', { 
+          formattedDate = date.toLocaleDateString('en-US', { 
             weekday: 'short',
             month: 'short', 
             day: 'numeric' 
           });
         } else {
-          formattedTime = time.toLocaleDateString('en-US', { 
+          formattedTime = date.toLocaleDateString('en-US', { 
             month: 'short', 
             year: '2-digit' 
           });
-          formattedDate = time.toLocaleDateString('en-US', { 
+          formattedDate = date.toLocaleDateString('en-US', { 
             month: 'long', 
             year: 'numeric' 
           });
         }
-
-        data.push({
-          time: time.toISOString(),
-          price: parseFloat(basePrice.toFixed(2)),
-          timestamp: time.getTime(),
+        
+        return {
+          time: date.toISOString(),
+          price: candle.close,
+          timestamp: candle.timestamp,
           formattedTime,
           formattedDate
-        });
+        };
+      });
+      
+      setChartData(transformedData);
+      
+      // Set day start price from first candle
+      if (transformedData.length > 0) {
+        setDayStartPrice(transformedData[0].price);
       }
-
-      return data;
-    };
-
-    const mockData = generateRealtimeData(period, currentPrice || 100);
-    setDayStartPrice(currentPrice - dayChange || mockData[0]?.price || 100);
-    
-    setTimeout(() => {
-      setChartData(mockData);
+    } catch (err: any) {
+      console.error('Error fetching chart data:', err);
+      setError(err.message || 'Failed to load chart data');
+      setChartData([]);
+    } finally {
       setLoading(false);
-    }, 150);
-  }, [symbol, period, currentPrice, dayChange]);
+    }
+  }, [symbol, period]);
+
+  useEffect(() => {
+    fetchCandles();
+  }, [fetchCandles]);
 
   const handleMouseMove = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
     if (!svgRef.current || chartData.length === 0) return;
 
     const rect = svgRef.current.getBoundingClientRect();
     const x = event.clientX - rect.left;
-    const width = rect.width - 80; // Account for padding
+    const width = rect.width - 80;
     const padding = 40;
     
-    // Calculate which data point we're closest to
     const dataIndex = Math.round(((x - padding) / width) * (chartData.length - 1));
     const clampedIndex = Math.max(0, Math.min(dataIndex, chartData.length - 1));
     
@@ -228,15 +153,23 @@ const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockCh
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading chart...</div>
+        <div className="animate-pulse text-muted-foreground">Loading chart data...</div>
       </div>
     );
   }
 
-  if (chartData.length === 0) {
+  if (error || chartData.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-muted-foreground">No data available</div>
+      <div className="h-full flex flex-col items-center justify-center gap-4">
+        <AlertTriangle className="h-8 w-8 text-muted-foreground" />
+        <div className="text-muted-foreground text-center">
+          <p className="font-medium">{error || 'No chart data available'}</p>
+          <p className="text-sm">Chart data could not be loaded for {symbol}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={fetchCandles}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Retry
+        </Button>
       </div>
     );
   }
@@ -244,12 +177,12 @@ const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockCh
   // Calculate chart dimensions and scaling
   const minPrice = Math.min(...chartData.map(d => d.price));
   const maxPrice = Math.max(...chartData.map(d => d.price));
-  const priceRange = maxPrice - minPrice;
+  const priceRange = maxPrice - minPrice || 1;
   const padding = 40;
   const chartWidth = 800;
   const chartHeight = 300;
 
-  // Determine if stock is up or down based on hover or current price
+  // Determine if stock is up or down
   const displayPrice = hoverData?.price || chartData[chartData.length - 1]?.price || 0;
   const isUp = displayPrice >= dayStartPrice;
   const strokeColor = isUp ? 'hsl(142 71% 60%)' : 'hsl(0 72% 60%)';
@@ -269,16 +202,13 @@ const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockCh
           <div className="text-2xl font-bold">
             ${displayPrice.toFixed(2)}
           </div>
-          <span className="text-xs px-1.5 py-0.5 rounded border border-amber-500 text-amber-500">
-            Simulated
-          </span>
         </div>
         {hoverData && (
           <div className="text-sm text-muted-foreground">
             {hoverData.time} • {hoverData.date}
           </div>
         )}
-        {!hoverData && (
+        {!hoverData && chartData.length > 0 && (
           <div className="text-sm text-muted-foreground">
             Latest • {chartData[chartData.length - 1]?.formattedDate}
           </div>

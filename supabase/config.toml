@@ -3,6 +3,9 @@ project_id = "bfhdtmxmlcfyxjgracbz"
 [functions.get-stock-prices]
 verify_jwt = false
 
+[functions.get-stock-candles]
+verify_jwt = false
+
 [functions.get-news]
 verify_jwt = false
 
