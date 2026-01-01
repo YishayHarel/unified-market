@@ -264,11 +264,15 @@ serve(async (req) => {
 
   try {
     const { symbol, period = '1D', includeIndicators = false } = await req.json();
-    
-    if (!symbol) {
+
+    const normalizedSymbol = String(symbol || '')
+      .trim()
+      .toUpperCase();
+
+    if (!normalizedSymbol) {
       throw new Error('Symbol is required');
     }
-    
+
     const finnhubKey = Deno.env.get('FINNHUB_API_KEY');
     const twelveDataKey = Deno.env.get('TWELVE_DATA_API_KEY');
 
@@ -276,7 +280,7 @@ serve(async (req) => {
       throw new Error('No market data API keys configured (FINNHUB_API_KEY or TWELVE_DATA_API_KEY)');
     }
 
-    const cacheKey = `${symbol}-${period}`;
+    const cacheKey = `${normalizedSymbol}-${period}`;
     let candles = getCached(cacheKey);
 
     if (!candles) {
@@ -285,76 +289,86 @@ serve(async (req) => {
       const from = to - (fromDays * 24 * 60 * 60);
 
       candles = finnhubKey
-        ? await fetchFinnhubCandles(symbol.toUpperCase(), resolution, from, to, finnhubKey)
+        ? await fetchFinnhubCandles(normalizedSymbol, resolution, from, to, finnhubKey)
         : null;
 
       if (!candles && twelveDataKey) {
-        candles = await fetchTwelveDataCandles(symbol.toUpperCase(), tdInterval, tdOutputsize, twelveDataKey);
+        candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize, twelveDataKey);
       }
 
       if (candles) {
         setCache(cacheKey, candles);
       }
     }
-    
+
     if (!candles || candles.length === 0) {
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           error: 'No data available',
           candles: null,
-          indicators: null
+          indicators: null,
         }),
-        { 
+        {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200 // Return 200 but with null data so client can handle gracefully
+          status: 200, // Return 200 but with null data so client can handle gracefully
         }
       );
     }
-    
+
     let indicators = null;
     if (includeIndicators) {
-      // For indicators, we need more historical data
-      const indicatorCacheKey = `${symbol}-indicators`;
+      // IMPORTANT: Avoid extra upstream API calls for indicators when we already have enough candles.
+      // This prevents hitting Twelve Data per-minute credit limits when multiple analytics widgets load.
+      const indicatorCacheKey = `${normalizedSymbol}-indicators-${period}`;
       indicators = getCached(indicatorCacheKey);
-      
-        if (!indicators) {
+
+      if (!indicators) {
+        const canComputeFromCurrentCandles =
+          Array.isArray(candles) &&
+          candles.length >= 26 &&
+          ['1M', '3M', '1Y', 'MAX'].includes(period);
+
+        let indicatorCandles = canComputeFromCurrentCandles ? candles : null;
+
+        if (!indicatorCandles) {
           // Fetch ~3 months of daily data for accurate indicator calculation
           const to = Math.floor(Date.now() / 1000);
           const from = to - (90 * 24 * 60 * 60);
 
-          let indicatorCandles = finnhubKey
-            ? await fetchFinnhubCandles(symbol.toUpperCase(), 'D', from, to, finnhubKey)
+          indicatorCandles = finnhubKey
+            ? await fetchFinnhubCandles(normalizedSymbol, 'D', from, to, finnhubKey)
             : null;
 
           if (!indicatorCandles && twelveDataKey) {
-            indicatorCandles = await fetchTwelveDataCandles(symbol.toUpperCase(), '1day', 140, twelveDataKey);
-          }
-
-          if (indicatorCandles && indicatorCandles.length >= 26) {
-            indicators = calculateIndicators(indicatorCandles);
-            if (indicators) {
-              setCache(indicatorCacheKey, indicators);
-            }
+            indicatorCandles = await fetchTwelveDataCandles(normalizedSymbol, '1day', 140, twelveDataKey);
           }
         }
+
+        if (indicatorCandles && indicatorCandles.length >= 26) {
+          indicators = calculateIndicators(indicatorCandles);
+          if (indicators) {
+            setCache(indicatorCacheKey, indicators);
+          }
+        }
+      }
     }
-    
-    console.log(`Returning ${candles.length} candles for ${symbol} (${period})`);
-    
+
+    console.log(`Returning ${candles.length} candles for ${normalizedSymbol} (${period})`);
+
     return new Response(
       JSON.stringify({ candles, indicators }),
-      { 
+      {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200
+        status: 200,
       }
     );
   } catch (error) {
     console.error('Error in get-stock-candles:', error.message);
     return new Response(
       JSON.stringify({ error: error.message }),
-      { 
+      {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
+        status: 500,
       }
     );
   }
