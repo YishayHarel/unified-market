@@ -132,17 +132,22 @@ const CorrelationMatrix = () => {
             <GitBranch className="h-5 w-5" />
             Correlation Matrix
           </CardTitle>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger>
-                <Info className="h-4 w-4 text-muted-foreground" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Shows how stocks in your watchlist move together.</p>
-                <p className="text-xs mt-1">Green = move together, Red = move opposite</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-amber-500 border-amber-500">
+              Simulated
+            </Badge>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="h-4 w-4 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Shows how stocks in your watchlist move together.</p>
+                  <p className="text-xs mt-1">Green = move together, Red = move opposite</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </div>
       </CardHeader>
       <CardContent>

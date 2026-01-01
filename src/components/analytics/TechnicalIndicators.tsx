@@ -92,10 +92,15 @@ const TechnicalIndicators = () => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <LineChart className="h-5 w-5" />
-          Technical Indicators
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <LineChart className="h-5 w-5" />
+            Technical Indicators
+          </CardTitle>
+          <Badge variant="outline" className="text-amber-500 border-amber-500">
+            Simulated Data
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Symbol Search */}

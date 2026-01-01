@@ -265,8 +265,13 @@ const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockCh
     <div ref={containerRef} className="h-full w-full relative">
       {/* Price Display */}
       <div className="absolute top-0 left-0 z-10 mb-4">
-        <div className="text-2xl font-bold">
-          ${displayPrice.toFixed(2)}
+        <div className="flex items-center gap-2">
+          <div className="text-2xl font-bold">
+            ${displayPrice.toFixed(2)}
+          </div>
+          <span className="text-xs px-1.5 py-0.5 rounded border border-amber-500 text-amber-500">
+            Simulated
+          </span>
         </div>
         {hoverData && (
           <div className="text-sm text-muted-foreground">
