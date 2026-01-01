@@ -178,7 +178,69 @@ async function fetchTwelveDataCandles(
 }
 
 /**
- * Fetch pre-calculated technical indicators from Alpha Vantage
+ * Fetch candle data from Alpha Vantage (fallback for when Twelve Data rate limit is hit)
+ * Good for ETFs like UVXY, SHY, IEF that Finnhub doesn't support
+ */
+async function fetchAlphaVantageCandles(
+  symbol: string,
+  outputsize: 'compact' | 'full',
+  apiKey: string
+): Promise<any[] | null> {
+  try {
+    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=${outputsize}&apikey=${apiKey}`;
+    console.log(`Fetching Alpha Vantage candles: ${url.replace(apiKey, 'XXX')}`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'UnifiedMarket/1.0' },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.error(`Alpha Vantage API error: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+
+    // Check for rate limit or errors
+    if (data['Note'] || data['Error Message'] || data['Information']) {
+      console.error('Alpha Vantage rate limit or error:', data['Note'] || data['Error Message'] || data['Information']);
+      return null;
+    }
+
+    const timeSeries = data['Time Series (Daily)'];
+    if (!timeSeries) {
+      console.log(`No Alpha Vantage candle data for ${symbol}`);
+      return null;
+    }
+
+    // Convert to array of candle objects, sorted oldest-first
+    const candles = Object.entries(timeSeries)
+      .map(([date, values]: [string, any]) => ({
+        timestamp: new Date(date).getTime(),
+        open: parseFloat(values['1. open']),
+        high: parseFloat(values['2. high']),
+        low: parseFloat(values['3. low']),
+        close: parseFloat(values['4. close']),
+        volume: parseInt(values['5. volume'], 10),
+      }))
+      .filter((c) => Number.isFinite(c.timestamp) && Number.isFinite(c.close))
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    console.log(`Got ${candles.length} candles for ${symbol} (Alpha Vantage)`);
+    return candles;
+  } catch (error) {
+    console.error(`Error fetching Alpha Vantage candles for ${symbol}:`, error);
+    return null;
+  }
+}
+
+/**
  * This is the PRIMARY source for indicators to reduce load on Finnhub/Twelve Data
  */
 async function fetchAlphaVantageIndicators(
@@ -361,9 +423,10 @@ serve(async (req) => {
 
     const finnhubKey = Deno.env.get('FINNHUB_API_KEY');
     const twelveDataKey = Deno.env.get('TWELVE_DATA_API_KEY');
+    const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
 
-    if (!finnhubKey && !twelveDataKey) {
-      throw new Error('No market data API keys configured (FINNHUB_API_KEY or TWELVE_DATA_API_KEY)');
+    if (!finnhubKey && !twelveDataKey && !alphaVantageKey) {
+      throw new Error('No market data API keys configured (FINNHUB_API_KEY, TWELVE_DATA_API_KEY, or ALPHA_VANTAGE_API_KEY)');
     }
 
     const cacheKey = `${normalizedSymbol}-${period}`;
@@ -374,12 +437,27 @@ serve(async (req) => {
       const to = Math.floor(Date.now() / 1000);
       const from = to - (fromDays * 24 * 60 * 60);
 
+      // Try Finnhub first (best for stocks, but returns 403 for ETFs)
       candles = finnhubKey
         ? await fetchFinnhubCandles(normalizedSymbol, resolution, from, to, finnhubKey)
         : null;
 
+      // Fallback to Twelve Data (good for ETFs, but has per-minute rate limit)
       if (!candles && twelveDataKey) {
         candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize, twelveDataKey);
+      }
+
+      // Third fallback: Alpha Vantage (good for ETFs, separate rate limit pool)
+      if (!candles && alphaVantageKey) {
+        // Alpha Vantage only provides daily data; use 'compact' for recent 100 days, 'full' for more
+        const avOutputsize = fromDays > 100 ? 'full' : 'compact';
+        const avCandles = await fetchAlphaVantageCandles(normalizedSymbol, avOutputsize, alphaVantageKey);
+        
+        if (avCandles && avCandles.length > 0) {
+          // Filter to match requested period
+          const cutoffTime = Date.now() - (fromDays * 24 * 60 * 60 * 1000);
+          candles = avCandles.filter(c => c.timestamp >= cutoffTime);
+        }
       }
 
       if (candles) {
