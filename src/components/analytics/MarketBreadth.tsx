@@ -2,58 +2,99 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, Activity, BarChart3 } from "lucide-react";
+import { TrendingUp, TrendingDown, BarChart3, RefreshCw, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 
 interface BreadthData {
   advancers: number;
   decliners: number;
   unchanged: number;
-  above50MA: number;
-  above200MA: number;
-  newHighs: number;
-  newLows: number;
-  upVolume: number;
-  downVolume: number;
+  totalStocks: number;
+  avgGain: number;
+  avgLoss: number;
+  biggestGainer: { symbol: string; change: number } | null;
+  biggestLoser: { symbol: string; change: number } | null;
 }
 
 const MarketBreadth = () => {
-  const [breadth, setBreadth] = useState<BreadthData>({
-    advancers: 0,
-    decliners: 0,
-    unchanged: 0,
-    above50MA: 0,
-    above200MA: 0,
-    newHighs: 0,
-    newLows: 0,
-    upVolume: 0,
-    downVolume: 0,
-  });
+  const [breadth, setBreadth] = useState<BreadthData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Simulate market breadth data
-    const generateBreadthData = () => {
-      const total = 500; // S&P 500 stocks
-      const advancers = Math.floor(Math.random() * 300 + 100);
-      const decliners = Math.floor(Math.random() * (total - advancers - 50));
-      const unchanged = total - advancers - decliners;
+  const fetchBreadthData = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Fetch top 100 stocks with their daily returns
+      const { data: stocks, error: dbError } = await supabase
+        .from('stocks')
+        .select('symbol, name, last_return_1d, is_top_100')
+        .eq('is_top_100', true)
+        .not('last_return_1d', 'is', null);
+
+      if (dbError) throw dbError;
+
+      if (!stocks || stocks.length === 0) {
+        throw new Error('No stock data available');
+      }
+
+      // Calculate breadth metrics
+      let advancers = 0;
+      let decliners = 0;
+      let unchanged = 0;
+      let totalGains = 0;
+      let totalLosses = 0;
+      let gainCount = 0;
+      let lossCount = 0;
+      let biggestGainer: { symbol: string; change: number } | null = null;
+      let biggestLoser: { symbol: string; change: number } | null = null;
+
+      stocks.forEach((stock) => {
+        const change = stock.last_return_1d || 0;
+        
+        if (change > 0.001) {
+          advancers++;
+          totalGains += change;
+          gainCount++;
+          if (!biggestGainer || change > biggestGainer.change) {
+            biggestGainer = { symbol: stock.symbol, change };
+          }
+        } else if (change < -0.001) {
+          decliners++;
+          totalLosses += Math.abs(change);
+          lossCount++;
+          if (!biggestLoser || change < biggestLoser.change) {
+            biggestLoser = { symbol: stock.symbol, change };
+          }
+        } else {
+          unchanged++;
+        }
+      });
 
       setBreadth({
         advancers,
         decliners,
         unchanged,
-        above50MA: Math.floor(Math.random() * 40 + 30), // 30-70%
-        above200MA: Math.floor(Math.random() * 30 + 40), // 40-70%
-        newHighs: Math.floor(Math.random() * 30 + 5),
-        newLows: Math.floor(Math.random() * 20 + 2),
-        upVolume: Math.random() * 60 + 20, // 20-80%
-        downVolume: 0, // Will be calculated
+        totalStocks: stocks.length,
+        avgGain: gainCount > 0 ? (totalGains / gainCount) * 100 : 0,
+        avgLoss: lossCount > 0 ? (totalLosses / lossCount) * 100 : 0,
+        biggestGainer,
+        biggestLoser,
       });
+    } catch (err) {
+      console.error('Error fetching market breadth:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load market breadth');
+    } finally {
       setLoading(false);
-    };
+    }
+  };
 
-    generateBreadthData();
-    const interval = setInterval(generateBreadthData, 60000);
+  useEffect(() => {
+    fetchBreadthData();
+    // Refresh every 5 minutes
+    const interval = setInterval(fetchBreadthData, 300000);
     return () => clearInterval(interval);
   }, []);
 
@@ -73,9 +114,30 @@ const MarketBreadth = () => {
     );
   }
 
+  if (error || !breadth) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            Market Breadth
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center h-48 gap-4">
+          <AlertCircle className="h-8 w-8 text-destructive" />
+          <p className="text-muted-foreground text-center">{error || 'Unable to load data'}</p>
+          <Button variant="outline" size="sm" onClick={fetchBreadthData}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const total = breadth.advancers + breadth.decliners + breadth.unchanged;
   const advanceDeclineRatio = breadth.decliners > 0 ? (breadth.advancers / breadth.decliners).toFixed(2) : "∞";
-  const advancersPercent = (breadth.advancers / total) * 100;
+  const advancersPercent = total > 0 ? (breadth.advancers / total) * 100 : 0;
   const isMarketBullish = breadth.advancers > breadth.decliners;
 
   return (
@@ -87,8 +149,8 @@ const MarketBreadth = () => {
             Market Breadth
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-amber-500 border-amber-500">
-              Simulated
+            <Badge variant="outline" className="text-green-500 border-green-500">
+              Live · Top {breadth.totalStocks}
             </Badge>
             <Badge variant={isMarketBullish ? "default" : "destructive"}>
               {isMarketBullish ? (
@@ -108,7 +170,7 @@ const MarketBreadth = () => {
               Advancers: {breadth.advancers}
             </span>
             <span className="text-muted-foreground">
-              Ratio: {advanceDeclineRatio}
+              A/D Ratio: {advanceDeclineRatio}
             </span>
             <span className="text-red-500 font-medium">
               Decliners: {breadth.decliners}
@@ -121,66 +183,65 @@ const MarketBreadth = () => {
             />
             <div
               className="bg-muted-foreground/30"
-              style={{ width: `${(breadth.unchanged / total) * 100}%` }}
+              style={{ width: `${total > 0 ? (breadth.unchanged / total) * 100 : 0}%` }}
             />
             <div
               className="bg-red-500 transition-all"
-              style={{ width: `${(breadth.decliners / total) * 100}%` }}
+              style={{ width: `${total > 0 ? (breadth.decliners / total) * 100 : 0}%` }}
             />
           </div>
         </div>
 
-        {/* Moving Average Stats */}
+        {/* Average Gains/Losses */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Above 50-Day MA</span>
-              <span className="font-medium">{breadth.above50MA}%</span>
+              <span className="text-muted-foreground">Avg Gain</span>
+              <span className="font-medium text-green-500">+{breadth.avgGain.toFixed(2)}%</span>
             </div>
-            <Progress value={breadth.above50MA} className="h-2" />
+            <Progress value={Math.min(breadth.avgGain * 10, 100)} className="h-2" />
           </div>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Above 200-Day MA</span>
-              <span className="font-medium">{breadth.above200MA}%</span>
+              <span className="text-muted-foreground">Avg Loss</span>
+              <span className="font-medium text-red-500">-{breadth.avgLoss.toFixed(2)}%</span>
             </div>
-            <Progress value={breadth.above200MA} className="h-2" />
+            <Progress value={Math.min(breadth.avgLoss * 10, 100)} className="h-2" />
           </div>
         </div>
 
-        {/* New Highs/Lows */}
+        {/* Top Movers */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-muted/30 rounded-lg p-3 text-center">
-            <div className="text-2xl font-bold text-green-500">{breadth.newHighs}</div>
-            <div className="text-xs text-muted-foreground">52-Week Highs</div>
+            {breadth.biggestGainer ? (
+              <>
+                <div className="text-lg font-bold text-green-500">{breadth.biggestGainer.symbol}</div>
+                <div className="text-sm text-green-500">+{(breadth.biggestGainer.change * 100).toFixed(2)}%</div>
+                <div className="text-xs text-muted-foreground">Top Gainer</div>
+              </>
+            ) : (
+              <div className="text-muted-foreground text-sm">No gainers</div>
+            )}
           </div>
           <div className="bg-muted/30 rounded-lg p-3 text-center">
-            <div className="text-2xl font-bold text-red-500">{breadth.newLows}</div>
-            <div className="text-xs text-muted-foreground">52-Week Lows</div>
+            {breadth.biggestLoser ? (
+              <>
+                <div className="text-lg font-bold text-red-500">{breadth.biggestLoser.symbol}</div>
+                <div className="text-sm text-red-500">{(breadth.biggestLoser.change * 100).toFixed(2)}%</div>
+                <div className="text-xs text-muted-foreground">Top Loser</div>
+              </>
+            ) : (
+              <div className="text-muted-foreground text-sm">No losers</div>
+            )}
           </div>
         </div>
 
-        {/* Volume Distribution */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Up Volume</span>
-            <span className="font-medium">{breadth.upVolume.toFixed(1)}%</span>
+        {/* Unchanged count */}
+        {breadth.unchanged > 0 && (
+          <div className="text-center text-sm text-muted-foreground">
+            {breadth.unchanged} stocks unchanged
           </div>
-          <div className="h-3 rounded-full overflow-hidden flex bg-muted">
-            <div
-              className="bg-green-500"
-              style={{ width: `${breadth.upVolume}%` }}
-            />
-            <div
-              className="bg-red-500"
-              style={{ width: `${100 - breadth.upVolume}%` }}
-            />
-          </div>
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Buying pressure</span>
-            <span>Selling pressure</span>
-          </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );
