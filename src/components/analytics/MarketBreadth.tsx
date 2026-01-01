@@ -86,13 +86,18 @@ const MarketBreadth = () => {
             <BarChart3 className="h-5 w-5" />
             Market Breadth
           </CardTitle>
-          <Badge variant={isMarketBullish ? "default" : "destructive"}>
-            {isMarketBullish ? (
-              <><TrendingUp className="h-3 w-3 mr-1" />Bullish</>
-            ) : (
-              <><TrendingDown className="h-3 w-3 mr-1" />Bearish</>
-            )}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-amber-500 border-amber-500">
+              Simulated
+            </Badge>
+            <Badge variant={isMarketBullish ? "default" : "destructive"}>
+              {isMarketBullish ? (
+                <><TrendingUp className="h-3 w-3 mr-1" />Bullish</>
+              ) : (
+                <><TrendingDown className="h-3 w-3 mr-1" />Bearish</>
+              )}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

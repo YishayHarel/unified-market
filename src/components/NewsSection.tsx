@@ -43,14 +43,8 @@ const NewsSection = () => {
       }
     } catch (error) {
       console.error('Error fetching news:', error);
-      // Set fallback news data instead of empty array
-      setNews([{
-        title: "Market Update",
-        description: "Unable to fetch latest news. Please try refreshing the page.",
-        source: { name: "System" },
-        publishedAt: new Date().toISOString(),
-        url: "#"
-      }]);
+      // Don't show fake data - leave empty to show error state
+      setNews([]);
     } finally {
       setLoading(false);
     }
@@ -103,6 +97,23 @@ const NewsSection = () => {
 
   const displayedNews = news.slice(0, displayedCount);
   const hasMoreNews = displayedCount < news.length;
+
+  if (news.length === 0) {
+    return (
+      <section>
+        <h2 className="text-2xl font-semibold mb-4">📰 Latest News</h2>
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardContent className="pt-6 text-center">
+            <p className="text-destructive font-medium">Unable to load news</p>
+            <p className="text-muted-foreground text-sm mt-1">Please try again later</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={fetchNews}>
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      </section>
+    );
+  }
 
   return (
     <section>

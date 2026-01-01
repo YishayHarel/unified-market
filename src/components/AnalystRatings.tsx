@@ -52,10 +52,15 @@ const AnalystRatings = ({ symbol }: AnalystRatingsProps) => {
   return (
     <Card className="bg-card">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Star className="w-5 h-5 text-primary" />
-          Analyst Ratings
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Star className="w-5 h-5 text-primary" />
+            Analyst Ratings
+          </CardTitle>
+          <Badge variant="outline" className="text-amber-500 border-amber-500">
+            Sample Data
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Overall Rating */}
