@@ -2,11 +2,11 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { LineChart, Search, TrendingUp, TrendingDown, Activity, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
+import { LineChart, TrendingUp, TrendingDown, Activity, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import StockAutocomplete from "@/components/StockAutocomplete";
 
 interface IndicatorSettings {
   sma20: boolean;
@@ -82,8 +82,8 @@ const TechnicalIndicators = () => {
     fetchIndicators(symbol);
   }, [symbol]);
 
-  const handleSearch = () => {
-    setSymbol(searchInput.toUpperCase());
+  const handleStockSelect = (stock: { symbol: string }) => {
+    setSymbol(stock.symbol);
   };
 
   const toggleIndicator = (key: keyof IndicatorSettings) => {
@@ -130,18 +130,12 @@ const TechnicalIndicators = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-2">
-            <Input
-              placeholder="Enter symbol..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value.toUpperCase())}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="flex-1"
-            />
-            <Button onClick={handleSearch}>
-              <Search className="h-4 w-4" />
-            </Button>
-          </div>
+          <StockAutocomplete
+            value={searchInput}
+            onChange={setSearchInput}
+            onSelect={handleStockSelect}
+            placeholder="Search stock symbol..."
+          />
           <div className="flex flex-col items-center justify-center py-8 gap-4">
             <AlertTriangle className="h-8 w-8 text-muted-foreground" />
             <div className="text-center">
@@ -176,18 +170,12 @@ const TechnicalIndicators = () => {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Symbol Search */}
-        <div className="flex gap-2">
-          <Input
-            placeholder="Enter symbol..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value.toUpperCase())}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            className="flex-1"
-          />
-          <Button onClick={handleSearch}>
-            <Search className="h-4 w-4" />
-          </Button>
-        </div>
+        <StockAutocomplete
+          value={searchInput}
+          onChange={setSearchInput}
+          onSelect={handleStockSelect}
+          placeholder="Search stock symbol..."
+        />
 
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold">{symbol}</h3>
