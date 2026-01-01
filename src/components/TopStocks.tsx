@@ -176,7 +176,7 @@ export const TopStocks = () => {
                     </div>
                   )}
                   
-                  {stock.rank_score && (
+                  {stock.rank_score !== null && stock.rank_score !== undefined && (
                     <div>
                       <p className="text-sm font-medium">Score</p>
                       <p className="text-xs text-muted-foreground">
