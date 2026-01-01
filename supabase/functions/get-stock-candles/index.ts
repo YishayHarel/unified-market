@@ -178,6 +178,92 @@ async function fetchTwelveDataCandles(
 }
 
 /**
+ * Fetch pre-calculated technical indicators from Alpha Vantage
+ * This is the PRIMARY source for indicators to reduce load on Finnhub/Twelve Data
+ */
+async function fetchAlphaVantageIndicators(
+  symbol: string,
+  apiKey: string
+): Promise<any | null> {
+  try {
+    // Fetch RSI, MACD, SMA, and EMA in parallel
+    const [rsiRes, macdRes, sma20Res, sma50Res, ema12Res, ema26Res, bbRes] = await Promise.all([
+      fetch(`https://www.alphavantage.co/query?function=RSI&symbol=${symbol}&interval=daily&time_period=14&series_type=close&apikey=${apiKey}`),
+      fetch(`https://www.alphavantage.co/query?function=MACD&symbol=${symbol}&interval=daily&series_type=close&apikey=${apiKey}`),
+      fetch(`https://www.alphavantage.co/query?function=SMA&symbol=${symbol}&interval=daily&time_period=20&series_type=close&apikey=${apiKey}`),
+      fetch(`https://www.alphavantage.co/query?function=SMA&symbol=${symbol}&interval=daily&time_period=50&series_type=close&apikey=${apiKey}`),
+      fetch(`https://www.alphavantage.co/query?function=EMA&symbol=${symbol}&interval=daily&time_period=12&series_type=close&apikey=${apiKey}`),
+      fetch(`https://www.alphavantage.co/query?function=EMA&symbol=${symbol}&interval=daily&time_period=26&series_type=close&apikey=${apiKey}`),
+      fetch(`https://www.alphavantage.co/query?function=BBANDS&symbol=${symbol}&interval=daily&time_period=20&series_type=close&apikey=${apiKey}`),
+    ]);
+
+    const [rsiData, macdData, sma20Data, sma50Data, ema12Data, ema26Data, bbData] = await Promise.all([
+      rsiRes.json(),
+      macdRes.json(),
+      sma20Res.json(),
+      sma50Res.json(),
+      ema12Res.json(),
+      ema26Res.json(),
+      bbRes.json(),
+    ]);
+
+    // Check for API limit or errors
+    if (rsiData['Note'] || rsiData['Error Message'] || macdData['Note'] || macdData['Error Message']) {
+      console.error('Alpha Vantage rate limit or error:', rsiData['Note'] || rsiData['Error Message'] || macdData['Note']);
+      return null;
+    }
+
+    // Extract latest values
+    const getLatestValue = (data: any, key: string, valueKey: string): number | null => {
+      const series = data?.[key];
+      if (!series) return null;
+      const dates = Object.keys(series).sort().reverse();
+      if (dates.length === 0) return null;
+      return parseFloat(series[dates[0]][valueKey]);
+    };
+
+    const rsi = getLatestValue(rsiData, 'Technical Analysis: RSI', 'RSI');
+    const macdLine = getLatestValue(macdData, 'Technical Analysis: MACD', 'MACD');
+    const macdSignal = getLatestValue(macdData, 'Technical Analysis: MACD', 'MACD_Signal');
+    const macdHist = getLatestValue(macdData, 'Technical Analysis: MACD', 'MACD_Hist');
+    const sma20 = getLatestValue(sma20Data, 'Technical Analysis: SMA', 'SMA');
+    const sma50 = getLatestValue(sma50Data, 'Technical Analysis: SMA', 'SMA');
+    const ema12 = getLatestValue(ema12Data, 'Technical Analysis: EMA', 'EMA');
+    const ema26 = getLatestValue(ema26Data, 'Technical Analysis: EMA', 'EMA');
+    const upperBand = getLatestValue(bbData, 'Technical Analysis: BBANDS', 'Real Upper Band');
+    const lowerBand = getLatestValue(bbData, 'Technical Analysis: BBANDS', 'Real Lower Band');
+    const middleBand = getLatestValue(bbData, 'Technical Analysis: BBANDS', 'Real Middle Band');
+
+    // Validate we got essential data
+    if (rsi === null || macdLine === null) {
+      console.log('Alpha Vantage returned incomplete indicator data');
+      return null;
+    }
+
+    console.log(`Got Alpha Vantage indicators for ${symbol}: RSI=${rsi?.toFixed(2)}, MACD=${macdLine?.toFixed(4)}`);
+
+    return {
+      rsi,
+      macdLine,
+      macdSignal: macdSignal ?? 0,
+      macdHistogram: macdHist ?? 0,
+      sma20: sma20 ?? 0,
+      sma50: sma50 ?? 0,
+      ema12: ema12 ?? 0,
+      ema26: ema26 ?? 0,
+      upperBand: upperBand ?? 0,
+      lowerBand: lowerBand ?? 0,
+      middleBand: middleBand ?? 0,
+      currentPrice: middleBand ?? 0, // Will be overwritten by actual price if available
+      source: 'alpha_vantage',
+    };
+  } catch (error) {
+    console.error(`Error fetching Alpha Vantage indicators for ${symbol}:`, error);
+    return null;
+  }
+}
+
+/**
  * Calculate technical indicators from candle data
  */
 function calculateIndicators(candles: any[]) {
@@ -317,38 +403,57 @@ serve(async (req) => {
 
     let indicators = null;
     if (includeIndicators) {
-      // IMPORTANT: Avoid extra upstream API calls for indicators when we already have enough candles.
-      // This prevents hitting Twelve Data per-minute credit limits when multiple analytics widgets load.
       const indicatorCacheKey = `${normalizedSymbol}-indicators-${period}`;
       indicators = getCached(indicatorCacheKey);
 
       if (!indicators) {
-        const canComputeFromCurrentCandles =
-          Array.isArray(candles) &&
-          candles.length >= 26 &&
-          ['1M', '3M', '1Y', 'MAX'].includes(period);
-
-        let indicatorCandles = canComputeFromCurrentCandles ? candles : null;
-
-        if (!indicatorCandles) {
-          // Fetch ~3 months of daily data for accurate indicator calculation
-          const to = Math.floor(Date.now() / 1000);
-          const from = to - (90 * 24 * 60 * 60);
-
-          indicatorCandles = finnhubKey
-            ? await fetchFinnhubCandles(normalizedSymbol, 'D', from, to, finnhubKey)
-            : null;
-
-          if (!indicatorCandles && twelveDataKey) {
-            indicatorCandles = await fetchTwelveDataCandles(normalizedSymbol, '1day', 140, twelveDataKey);
+        // PRIMARY: Try Alpha Vantage first (pre-calculated indicators, separate rate limit pool)
+        const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
+        if (alphaVantageKey) {
+          console.log(`Trying Alpha Vantage for ${normalizedSymbol} indicators...`);
+          indicators = await fetchAlphaVantageIndicators(normalizedSymbol, alphaVantageKey);
+          
+          // Add current price from candles if we have it
+          if (indicators && candles && candles.length > 0) {
+            indicators.currentPrice = candles[candles.length - 1].close;
           }
         }
 
-        if (indicatorCandles && indicatorCandles.length >= 26) {
-          indicators = calculateIndicators(indicatorCandles);
-          if (indicators) {
-            setCache(indicatorCacheKey, indicators);
+        // FALLBACK: Calculate from candle data if Alpha Vantage fails
+        if (!indicators) {
+          console.log(`Alpha Vantage unavailable, falling back to candle-based calculation for ${normalizedSymbol}`);
+          
+          const canComputeFromCurrentCandles =
+            Array.isArray(candles) &&
+            candles.length >= 26 &&
+            ['1M', '3M', '1Y', 'MAX'].includes(period);
+
+          let indicatorCandles = canComputeFromCurrentCandles ? candles : null;
+
+          if (!indicatorCandles) {
+            // Fetch ~3 months of daily data for accurate indicator calculation
+            const to = Math.floor(Date.now() / 1000);
+            const from = to - (90 * 24 * 60 * 60);
+
+            indicatorCandles = finnhubKey
+              ? await fetchFinnhubCandles(normalizedSymbol, 'D', from, to, finnhubKey)
+              : null;
+
+            if (!indicatorCandles && twelveDataKey) {
+              indicatorCandles = await fetchTwelveDataCandles(normalizedSymbol, '1day', 140, twelveDataKey);
+            }
           }
+
+          if (indicatorCandles && indicatorCandles.length >= 26) {
+            indicators = calculateIndicators(indicatorCandles);
+            if (indicators) {
+              indicators.source = 'calculated';
+            }
+          }
+        }
+
+        if (indicators) {
+          setCache(indicatorCacheKey, indicators);
         }
       }
     }
