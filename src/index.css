@@ -27,6 +27,11 @@
     --radius: 0.75rem;
     --positive: 142 76% 36%;
     --negative: 0 72% 51%;
+
+    /* Chart color tokens (HSL triplets) */
+    --chart-vix: 24 95% 53%;
+    --chart-2y: 210 90% 50%;
+    --chart-10y: 270 85% 62%;
     
     /* Custom gradient and shadow tokens */
     --gradient-primary: linear-gradient(135deg, hsl(142 76% 36%), hsl(142 86% 45%));

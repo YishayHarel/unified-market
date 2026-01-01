@@ -9,6 +9,10 @@ const corsHeaders = {
 const candleCache = new Map<string, { data: any; expiry: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minute cache
 
+// If Finnhub /stock/candle is forbidden for this key/plan, back off to avoid spamming 403s
+let finnhubCandleForbiddenUntil = 0;
+const FINNHUB_FORBIDDEN_BACKOFF_MS = 10 * 60 * 1000;
+
 function getCached(key: string): any | null {
   const cached = candleCache.get(key);
   if (cached && Date.now() < cached.expiry) {
@@ -23,26 +27,30 @@ function setCache(key: string, data: any): void {
 }
 
 /**
- * Convert period to Finnhub resolution and time range
+ * Convert period to provider-specific parameters
  */
-function getPeriodParams(period: string): { resolution: string; fromDays: number } {
+function getPeriodParams(period: string): {
+  resolution: string;
+  fromDays: number;
+  tdInterval: string;
+  tdOutputsize: number;
+} {
   switch (period) {
     case '1H':
-      return { resolution: '5', fromDays: 1 }; // 5-min candles, 1 day back
     case '1D':
-      return { resolution: '5', fromDays: 1 }; // 5-min candles, 1 day
+      return { resolution: '5', fromDays: 1, tdInterval: '5min', tdOutputsize: 288 }; // ~1d of 5-min bars
     case '1W':
-      return { resolution: '60', fromDays: 7 }; // 1-hour candles, 7 days
+      return { resolution: '60', fromDays: 7, tdInterval: '1h', tdOutputsize: 200 }; // ~1w of hourly bars
     case '1M':
-      return { resolution: 'D', fromDays: 30 }; // Daily candles, 30 days
+      return { resolution: 'D', fromDays: 30, tdInterval: '1day', tdOutputsize: 50 };
     case '3M':
-      return { resolution: 'D', fromDays: 90 }; // Daily candles, 90 days
+      return { resolution: 'D', fromDays: 90, tdInterval: '1day', tdOutputsize: 140 };
     case '1Y':
-      return { resolution: 'D', fromDays: 365 }; // Daily candles, 1 year
+      return { resolution: 'D', fromDays: 365, tdInterval: '1day', tdOutputsize: 320 };
     case 'MAX':
-      return { resolution: 'W', fromDays: 365 * 5 }; // Weekly candles, 5 years
+      return { resolution: 'W', fromDays: 365 * 5, tdInterval: '1week', tdOutputsize: 320 };
     default:
-      return { resolution: 'D', fromDays: 30 };
+      return { resolution: 'D', fromDays: 30, tdInterval: '1day', tdOutputsize: 50 };
   }
 }
 
@@ -57,25 +65,32 @@ async function fetchFinnhubCandles(
   apiKey: string
 ): Promise<any> {
   try {
-    const url = `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&token=${apiKey}`;
-    console.log(`Fetching candles: ${url.replace(apiKey, 'XXX')}`);
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'UnifiedMarket/1.0' }
-    });
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      console.error(`Finnhub candle API error: ${response.status}`);
+    if (Date.now() < finnhubCandleForbiddenUntil) {
       return null;
     }
-    
+
+    const url = `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&token=${apiKey}`;
+    console.log(`Fetching candles: ${url.replace(apiKey, 'XXX')}`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'UnifiedMarket/1.0' },
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.error(`Finnhub candle API error: ${response.status}`);
+      if (response.status === 403) {
+        finnhubCandleForbiddenUntil = Date.now() + FINNHUB_FORBIDDEN_BACKOFF_MS;
+      }
+      return null;
+    }
+
     const data = await response.json();
-    
+
     // Finnhub returns: c (close), h (high), l (low), o (open), t (timestamp), v (volume), s (status)
     if (data.s === 'no_data' || !data.c || data.c.length === 0) {
       console.log(`No candle data for ${symbol}`);
@@ -96,6 +111,68 @@ async function fetchFinnhubCandles(
     return candles;
   } catch (error) {
     console.error(`Error fetching candles for ${symbol}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Fetch candle data from Twelve Data (fallback for Finnhub 403 / plan restrictions)
+ */
+async function fetchTwelveDataCandles(
+  symbol: string,
+  interval: string,
+  outputsize: number,
+  apiKey: string
+): Promise<any[] | null> {
+  try {
+    const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&outputsize=${outputsize}&format=JSON&apikey=${apiKey}`;
+    console.log(`Fetching Twelve Data candles: ${url.replace(apiKey, 'XXX')}`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'UnifiedMarket/1.0' },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.error(`Twelve Data API error: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (data?.status === 'error' || data?.code) {
+      console.error(`Twelve Data error for ${symbol}:`, data?.message || data);
+      return null;
+    }
+
+    const values = data?.values;
+    if (!Array.isArray(values) || values.length === 0) {
+      console.log(`No Twelve Data candle data for ${symbol}`);
+      return null;
+    }
+
+    // Twelve Data returns newest-first; normalize to oldest-first.
+    const candles = values
+      .map((v: any) => ({
+        timestamp: new Date(v.datetime).getTime(),
+        open: Number(v.open),
+        high: Number(v.high),
+        low: Number(v.low),
+        close: Number(v.close),
+        volume: v.volume !== undefined ? Number(v.volume) : null,
+      }))
+      .filter((c: any) => Number.isFinite(c.timestamp) && Number.isFinite(c.close))
+      .sort((a: any, b: any) => a.timestamp - b.timestamp);
+
+    console.log(`Got ${candles.length} candles for ${symbol} (Twelve Data)`);
+    return candles;
+  } catch (error) {
+    console.error(`Error fetching Twelve Data candles for ${symbol}:`, error);
     return null;
   }
 }
@@ -193,20 +270,28 @@ serve(async (req) => {
     }
     
     const finnhubKey = Deno.env.get('FINNHUB_API_KEY');
-    if (!finnhubKey) {
-      throw new Error('FINNHUB_API_KEY not configured');
+    const twelveDataKey = Deno.env.get('TWELVE_DATA_API_KEY');
+
+    if (!finnhubKey && !twelveDataKey) {
+      throw new Error('No market data API keys configured (FINNHUB_API_KEY or TWELVE_DATA_API_KEY)');
     }
-    
+
     const cacheKey = `${symbol}-${period}`;
     let candles = getCached(cacheKey);
-    
+
     if (!candles) {
-      const { resolution, fromDays } = getPeriodParams(period);
+      const { resolution, fromDays, tdInterval, tdOutputsize } = getPeriodParams(period);
       const to = Math.floor(Date.now() / 1000);
       const from = to - (fromDays * 24 * 60 * 60);
-      
-      candles = await fetchFinnhubCandles(symbol.toUpperCase(), resolution, from, to, finnhubKey);
-      
+
+      candles = finnhubKey
+        ? await fetchFinnhubCandles(symbol.toUpperCase(), resolution, from, to, finnhubKey)
+        : null;
+
+      if (!candles && twelveDataKey) {
+        candles = await fetchTwelveDataCandles(symbol.toUpperCase(), tdInterval, tdOutputsize, twelveDataKey);
+      }
+
       if (candles) {
         setCache(cacheKey, candles);
       }
@@ -232,19 +317,26 @@ serve(async (req) => {
       const indicatorCacheKey = `${symbol}-indicators`;
       indicators = getCached(indicatorCacheKey);
       
-      if (!indicators) {
-        // Fetch 3 months of daily data for accurate indicator calculation
-        const to = Math.floor(Date.now() / 1000);
-        const from = to - (90 * 24 * 60 * 60);
-        const indicatorCandles = await fetchFinnhubCandles(symbol.toUpperCase(), 'D', from, to, finnhubKey);
-        
-        if (indicatorCandles && indicatorCandles.length >= 26) {
-          indicators = calculateIndicators(indicatorCandles);
-          if (indicators) {
-            setCache(indicatorCacheKey, indicators);
+        if (!indicators) {
+          // Fetch ~3 months of daily data for accurate indicator calculation
+          const to = Math.floor(Date.now() / 1000);
+          const from = to - (90 * 24 * 60 * 60);
+
+          let indicatorCandles = finnhubKey
+            ? await fetchFinnhubCandles(symbol.toUpperCase(), 'D', from, to, finnhubKey)
+            : null;
+
+          if (!indicatorCandles && twelveDataKey) {
+            indicatorCandles = await fetchTwelveDataCandles(symbol.toUpperCase(), '1day', 140, twelveDataKey);
+          }
+
+          if (indicatorCandles && indicatorCandles.length >= 26) {
+            indicators = calculateIndicators(indicatorCandles);
+            if (indicators) {
+              setCache(indicatorCacheKey, indicators);
+            }
           }
         }
-      }
     }
     
     console.log(`Returning ${candles.length} candles for ${symbol} (${period})`);
