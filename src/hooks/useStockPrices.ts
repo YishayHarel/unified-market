@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { PerformanceCache, RequestBatcher } from '@/lib/performanceCache';
 
 /**
  * Stock price data structure
@@ -17,11 +18,58 @@ export interface StockPrice {
 }
 
 /**
- * Global price cache to share across components
- * Prevents duplicate API calls for the same symbols
+ * Performance cache for stock prices
+ * Shared across all components using this hook
  */
-const priceCache = new Map<string, { data: StockPrice; timestamp: number }>();
-const CACHE_TTL_MS = 60 * 1000; // 1 minute cache for real-time feel
+const priceCache = new PerformanceCache<StockPrice>({
+  maxSize: 500,
+  defaultTtlMs: 60 * 1000, // 1 minute cache for real-time feel
+});
+
+/**
+ * Request batcher to combine multiple symbol requests
+ * Reduces API calls by batching requests within 50ms window
+ */
+const priceBatcher = new RequestBatcher<string, StockPrice>(
+  async (symbols: string[]) => {
+    const uniqueSymbols = [...new Set(symbols)];
+    console.log(`[RequestBatcher] Fetching ${uniqueSymbols.length} symbols in batch`);
+    
+    const { data, error } = await supabase.functions.invoke('get-stock-prices', {
+      body: { symbols: uniqueSymbols },
+    });
+    
+    const results = new Map<string, StockPrice>();
+    
+    if (error) {
+      console.error('[RequestBatcher] Error fetching prices:', error);
+      return results;
+    }
+    
+    if (data && Array.isArray(data)) {
+      for (const priceData of data) {
+        const stockPrice: StockPrice = {
+          symbol: priceData.symbol,
+          price: priceData.price,
+          change: priceData.change,
+          changePercent: priceData.changePercent,
+          high: priceData.high,
+          low: priceData.low,
+          open: priceData.open,
+          previousClose: priceData.previousClose,
+          isFallback: priceData.isFallback,
+        };
+        results.set(priceData.symbol, stockPrice);
+      }
+    }
+    
+    return results;
+  },
+  {
+    maxBatchSize: 50,
+    batchDelayMs: 50,
+  }
+);
 
 /**
  * Pending requests tracker to prevent duplicate in-flight requests
@@ -29,26 +77,8 @@ const CACHE_TTL_MS = 60 * 1000; // 1 minute cache for real-time feel
 const pendingRequests = new Map<string, Promise<StockPrice | null>>();
 
 /**
- * Get cached price if still valid
- */
-function getCachedPrice(symbol: string): StockPrice | null {
-  const cached = priceCache.get(symbol);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return cached.data;
-  }
-  return null;
-}
-
-/**
- * Store price in cache
- */
-function setCachedPrice(symbol: string, data: StockPrice): void {
-  priceCache.set(symbol, { data, timestamp: Date.now() });
-}
-
-/**
  * Fetch prices for multiple symbols efficiently
- * Only fetches symbols not already cached
+ * Uses batching and caching for optimal performance
  */
 async function fetchPrices(symbols: string[]): Promise<Map<string, StockPrice>> {
   const results = new Map<string, StockPrice>();
@@ -56,7 +86,7 @@ async function fetchPrices(symbols: string[]): Promise<Map<string, StockPrice>> 
 
   // Check cache first
   for (const symbol of symbols) {
-    const cached = getCachedPrice(symbol);
+    const cached = priceCache.get(symbol);
     if (cached) {
       results.set(symbol, cached);
     } else {
@@ -72,37 +102,16 @@ async function fetchPrices(symbols: string[]): Promise<Map<string, StockPrice>> 
 
   console.log(`[useStockPrices] Fetching ${symbolsToFetch.length} symbols (${symbols.length - symbolsToFetch.length} cached)`);
 
-  try {
-    const { data, error } = await supabase.functions.invoke('get-stock-prices', {
-      body: { symbols: symbolsToFetch },
-    });
-
-    if (error) {
-      console.error('[useStockPrices] Error fetching prices:', error);
-      return results;
+  // Use batching for efficient fetching
+  const fetchPromises = symbolsToFetch.map(async (symbol) => {
+    const result = await priceBatcher.add(symbol);
+    if (result) {
+      priceCache.set(symbol, result);
+      results.set(symbol, result);
     }
+  });
 
-    if (data && Array.isArray(data)) {
-      for (const priceData of data) {
-        const stockPrice: StockPrice = {
-          symbol: priceData.symbol,
-          price: priceData.price,
-          change: priceData.change,
-          changePercent: priceData.changePercent,
-          high: priceData.high,
-          low: priceData.low,
-          open: priceData.open,
-          previousClose: priceData.previousClose,
-          isFallback: priceData.isFallback,
-        };
-        setCachedPrice(priceData.symbol, stockPrice);
-        results.set(priceData.symbol, stockPrice);
-      }
-    }
-  } catch (err) {
-    console.error('[useStockPrices] Fetch error:', err);
-  }
-
+  await Promise.all(fetchPromises);
   return results;
 }
 
@@ -115,12 +124,19 @@ export function useStockPrices(symbols: string[]) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const symbolsRef = useRef<string[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
     if (symbols.length === 0) {
       setLoading(false);
       return;
     }
+
+    // Cancel any pending request
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    abortRef.current = new AbortController();
 
     setLoading(true);
     setError(null);
@@ -129,6 +145,9 @@ export function useStockPrices(symbols: string[]) {
       const priceMap = await fetchPrices(symbols);
       setPrices(priceMap);
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return; // Ignore aborted requests
+      }
       setError(err instanceof Error ? err.message : 'Failed to fetch prices');
     } finally {
       setLoading(false);
@@ -137,13 +156,19 @@ export function useStockPrices(symbols: string[]) {
 
   useEffect(() => {
     // Only refetch if symbols changed
-    const symbolsKey = symbols.sort().join(',');
-    const prevSymbolsKey = symbolsRef.current.sort().join(',');
+    const symbolsKey = [...symbols].sort().join(',');
+    const prevSymbolsKey = [...symbolsRef.current].sort().join(',');
     
     if (symbolsKey !== prevSymbolsKey) {
       symbolsRef.current = [...symbols];
       refresh();
     }
+    
+    return () => {
+      if (abortRef.current) {
+        abortRef.current.abort();
+      }
+    };
   }, [symbols, refresh]);
 
   // Initial fetch
@@ -176,4 +201,11 @@ export function useStockPrice(symbol: string | null) {
  */
 export function clearPriceCache(): void {
   priceCache.clear();
+}
+
+/**
+ * Get cache statistics for debugging
+ */
+export function getPriceCacheStats() {
+  return priceCache.getStats();
 }
