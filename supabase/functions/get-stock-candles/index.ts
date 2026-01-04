@@ -5,6 +5,33 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Rate limiting - prevent abuse
+interface RateLimit {
+  count: number;
+  resetTime: number;
+}
+const rateLimits = new Map<string, RateLimit>();
+const MAX_REQUESTS_PER_MINUTE = 30;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
+  const now = Date.now();
+  const limit = rateLimits.get(identifier);
+
+  if (!limit || now > limit.resetTime) {
+    rateLimits.set(identifier, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    return { allowed: true, remaining: MAX_REQUESTS_PER_MINUTE - 1 };
+  }
+
+  if (limit.count >= MAX_REQUESTS_PER_MINUTE) {
+    return { allowed: false, remaining: 0 };
+  }
+
+  limit.count++;
+  rateLimits.set(identifier, limit);
+  return { allowed: true, remaining: MAX_REQUESTS_PER_MINUTE - limit.count };
+}
+
 // Cache for candle data (longer TTL since historical data doesn't change)
 const candleCache = new Map<string, { data: any; expiry: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minute cache
@@ -411,6 +438,23 @@ serve(async (req) => {
   }
 
   try {
+    // Rate limiting by IP
+    const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
+                     req.headers.get('cf-connecting-ip') || 
+                     'unknown';
+    
+    const rateCheck = checkRateLimit(clientIP);
+    if (!rateCheck.allowed) {
+      console.log(`Rate limit exceeded for IP: ${clientIP}`);
+      return new Response(
+        JSON.stringify({ error: 'Rate limit exceeded. Please wait before making more requests.' }),
+        { 
+          status: 429, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' } 
+        }
+      );
+    }
+
     const { symbol, period = '1D', includeIndicators = false } = await req.json();
 
     const normalizedSymbol = String(symbol || '')
