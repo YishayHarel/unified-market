@@ -2,23 +2,19 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
-import { TrendingUp, TrendingDown, RefreshCw, Loader2, BarChart3, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown, RefreshCw, Loader2, Activity, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
-interface ChartData {
+interface ChartDataPoint {
   date: string;
   value: number;
 }
 
-interface SymbolData {
-  symbol: string;
-  name: string;
-  data: ChartData[];
-  currentPrice: number;
+interface YieldVixData {
+  data: ChartDataPoint[];
+  current: number;
   change: number;
-  changePercent: number;
 }
 
 const chartColors = {
@@ -30,65 +26,72 @@ const chartColors = {
 const YieldAndVixCharts = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [vixData, setVixData] = useState<SymbolData | null>(null);
-  const [twoYearData, setTwoYearData] = useState<SymbolData | null>(null);
-  const [tenYearData, setTenYearData] = useState<SymbolData | null>(null);
-  const [selectedPeriod, setSelectedPeriod] = useState<string>("1M");
+  const [vixData, setVixData] = useState<YieldVixData | null>(null);
+  const [twoYearData, setTwoYearData] = useState<YieldVixData | null>(null);
+  const [tenYearData, setTenYearData] = useState<YieldVixData | null>(null);
 
-  const fetchSingleSymbol = async (symbol: string, name: string): Promise<SymbolData | null> => {
-    const { data, error } = await supabase.functions.invoke("get-stock-candles", {
-      body: { symbol, period: selectedPeriod, includeIndicators: false },
+  const fetchVix = async (): Promise<YieldVixData | null> => {
+    const { data, error } = await supabase.functions.invoke("get-treasury-vix", {
+      body: { type: "vix" },
     });
 
-    if (error || !data?.candles?.length) {
-      console.error(`Error fetching ${symbol}:`, error);
+    if (error || !data?.data) {
+      console.error("Error fetching VIX:", error);
       return null;
     }
 
-    const candles = data.candles;
-    const chartData: ChartData[] = candles.map((c: any) => ({
-      date: new Date(c.timestamp).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      }),
-      value: c.close,
-    }));
-
-    const firstPrice = candles[0]?.close || 0;
-    const lastPrice = candles[candles.length - 1]?.close || 0;
-    const change = lastPrice - firstPrice;
-    const changePercent = firstPrice > 0 ? (change / firstPrice) * 100 : 0;
-
     return {
-      symbol,
-      name,
-      data: chartData,
-      currentPrice: lastPrice,
-      change,
-      changePercent,
+      data: data.data.map((d: any) => ({
+        date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        value: d.value,
+      })),
+      current: data.current,
+      change: data.change,
     };
   };
 
-  const fetchChartData = async () => {
+  const fetchTreasury = async (maturity: string): Promise<YieldVixData | null> => {
+    const { data, error } = await supabase.functions.invoke("get-treasury-vix", {
+      body: { type: "treasury", maturity },
+    });
+
+    if (error || !data?.data) {
+      console.error(`Error fetching Treasury ${maturity}:`, error);
+      return null;
+    }
+
+    return {
+      data: data.data.map((d: any) => ({
+        date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        value: d.value,
+      })),
+      current: data.current,
+      change: data.change,
+    };
+  };
+
+  const fetchAllData = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // Fetch sequentially to avoid hitting Twelve Data's per-minute rate limit (8 credits)
-      // Since Finnhub returns 403 for ETFs, all requests fall back to Twelve Data
-      const vix = await fetchSingleSymbol("UVXY", "VIX Volatility Index (UVXY Proxy)");
+      // Fetch sequentially to avoid hitting Alpha Vantage rate limit (5 calls/min on free tier)
+      const vix = await fetchVix();
       setVixData(vix);
 
-      // Small delay to spread API calls across time
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const twoYear = await fetchSingleSymbol("SHY", "2-Year Treasury Yield (SHY Proxy)");
+      await new Promise((resolve) => setTimeout(resolve, 1500)); // Wait 1.5s between calls
+
+      const twoYear = await fetchTreasury("2year");
       setTwoYearData(twoYear);
 
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const tenYear = await fetchSingleSymbol("IEF", "10-Year Treasury Yield (IEF Proxy)");
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      const tenYear = await fetchTreasury("10year");
       setTenYearData(tenYear);
+
+      if (!vix && !twoYear && !tenYear) {
+        setError("Unable to fetch data. API may be rate limited. Try again in a minute.");
+      }
     } catch (err) {
       console.error("Error fetching chart data:", err);
       setError("Failed to load chart data");
@@ -98,42 +101,50 @@ const YieldAndVixCharts = () => {
   };
 
   useEffect(() => {
-    fetchChartData();
-  }, [selectedPeriod]);
+    fetchAllData();
+  }, []);
 
-  const renderChart = (data: SymbolData | null, color: string, isVix: boolean = false) => {
+  const renderChart = (
+    data: YieldVixData | null,
+    color: string,
+    label: string,
+    isPercentage: boolean = true
+  ) => {
     if (!data) {
       return (
-        <div className="flex items-center justify-center h-48 text-muted-foreground">
+        <div className="flex items-center justify-center h-48 text-muted-foreground gap-2">
+          <AlertCircle className="h-4 w-4" />
           No data available
         </div>
       );
     }
 
-    const isPositive = data.changePercent >= 0;
+    const isPositive = data.change >= 0;
 
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-2xl font-bold">${data.currentPrice.toFixed(2)}</div>
-            <div className={`flex items-center gap-1 text-sm ${isPositive ? "text-primary" : "text-destructive"}`}>
+            <div className="text-2xl font-bold font-mono">
+              {data.current.toFixed(2)}{isPercentage ? "%" : ""}
+            </div>
+            <div className={`flex items-center gap-1 text-sm ${isPositive ? "text-destructive" : "text-primary"}`}>
               {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
               <span>
                 {isPositive ? "+" : ""}
-                {data.change.toFixed(2)} ({data.changePercent.toFixed(2)}%)
+                {data.change.toFixed(3)}{isPercentage ? "%" : ""} from prev day
               </span>
             </div>
           </div>
           <Badge variant="outline" className="text-xs">
-            {data.symbol}
+            {label}
           </Badge>
         </div>
 
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={data.data}>
             <defs>
-              <linearGradient id={`gradient-${data.symbol}`} x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={color} stopOpacity={0.3} />
                 <stop offset="95%" stopColor={color} stopOpacity={0} />
               </linearGradient>
@@ -152,6 +163,7 @@ const YieldAndVixCharts = () => {
               axisLine={false}
               domain={["auto", "auto"]}
               className="text-muted-foreground"
+              tickFormatter={(val) => `${val.toFixed(2)}${isPercentage ? "%" : ""}`}
             />
             <Tooltip
               contentStyle={{
@@ -160,27 +172,20 @@ const YieldAndVixCharts = () => {
                 borderRadius: "8px",
               }}
               labelStyle={{ color: "hsl(var(--foreground))" }}
+              formatter={(value: number) => [
+                `${value.toFixed(2)}${isPercentage ? "%" : ""}`,
+                isPercentage ? "Yield" : "VIX"
+              ]}
             />
             <Area
               type="monotone"
               dataKey="value"
               stroke={color}
               strokeWidth={2}
-              fill={`url(#gradient-${data.symbol})`}
+              fill={`url(#gradient-${label})`}
             />
           </AreaChart>
         </ResponsiveContainer>
-
-        {isVix && (
-          <div className="text-xs text-muted-foreground">
-            UVXY tracks 1.5x the daily VIX short-term futures index
-          </div>
-        )}
-        {!isVix && (
-          <div className="text-xs text-muted-foreground">
-            ETF price moves inversely to yield - higher prices = lower yields
-          </div>
-        )}
       </div>
     );
   };
@@ -191,28 +196,31 @@ const YieldAndVixCharts = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Loader2 className="h-5 w-5 animate-spin" />
-            Loading Charts...
+            Loading Treasury Yields & VIX...
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center h-64">
-          <div className="text-muted-foreground">Fetching historical data...</div>
+          <div className="text-muted-foreground text-center">
+            <p>Fetching real yield and volatility data...</p>
+            <p className="text-xs mt-2">This may take a few seconds due to API rate limits</p>
+          </div>
         </CardContent>
       </Card>
     );
   }
 
-  if (error) {
+  if (error && !vixData && !twoYearData && !tenYearData) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />
-            Yield & VIX Charts
+            <Activity className="h-5 w-5" />
+            Treasury Yields & VIX
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center h-48 gap-4">
           <p className="text-muted-foreground">{error}</p>
-          <Button variant="outline" size="sm" onClick={fetchChartData}>
+          <Button variant="outline" size="sm" onClick={fetchAllData}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Retry
           </Button>
@@ -221,28 +229,25 @@ const YieldAndVixCharts = () => {
     );
   }
 
+  // Calculate yield spread
+  const yieldSpread = twoYearData && tenYearData 
+    ? tenYearData.current - twoYearData.current 
+    : null;
+
   return (
     <div className="space-y-6">
-      {/* Period Selector */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold flex items-center gap-2">
           <Activity className="h-5 w-5" />
           Treasury Yields & Volatility
         </h3>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-primary border-primary">
-            Live Data
+          <Badge variant="outline" className="text-xs text-muted-foreground">
+            ~15 min delay
           </Badge>
-          <Tabs value={selectedPeriod} onValueChange={setSelectedPeriod}>
-            <TabsList className="h-8">
-              <TabsTrigger value="1W" className="text-xs px-2">1W</TabsTrigger>
-              <TabsTrigger value="1M" className="text-xs px-2">1M</TabsTrigger>
-              <TabsTrigger value="3M" className="text-xs px-2">3M</TabsTrigger>
-              <TabsTrigger value="1Y" className="text-xs px-2">1Y</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Button variant="ghost" size="sm" onClick={fetchChartData}>
-            <RefreshCw className="h-4 w-4" />
+          <Button variant="ghost" size="sm" onClick={fetchAllData} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </div>
@@ -252,10 +257,23 @@ const YieldAndVixCharts = () => {
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
             <Activity className="h-4 w-4" style={{ color: chartColors.vix }} />
-            VIX Volatility Index
+            CBOE Volatility Index (VIX)
+            <span className="text-xs text-muted-foreground font-normal ml-2">
+              "Fear Gauge" - measures expected 30-day volatility
+            </span>
           </CardTitle>
         </CardHeader>
-        <CardContent>{renderChart(vixData, chartColors.vix, true)}</CardContent>
+        <CardContent>
+          {renderChart(vixData, chartColors.vix, "VIX", false)}
+          {vixData && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              {vixData.current < 15 ? "🟢 Low volatility (complacency)" : 
+               vixData.current < 20 ? "🟡 Normal volatility" :
+               vixData.current < 30 ? "🟠 Elevated volatility (caution)" :
+               "🔴 High volatility (fear)"}
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       {/* Treasury Yield Charts */}
@@ -264,47 +282,49 @@ const YieldAndVixCharts = () => {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="h-4 w-4" style={{ color: chartColors.twoYear }} />
-              2-Year Treasury (SHY)
+              2-Year Treasury Yield
             </CardTitle>
           </CardHeader>
-          <CardContent>{renderChart(twoYearData, chartColors.twoYear)}</CardContent>
+          <CardContent>{renderChart(twoYearData, chartColors.twoYear, "2Y Yield", true)}</CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="h-4 w-4" style={{ color: chartColors.tenYear }} />
-              10-Year Treasury (IEF)
+              10-Year Treasury Yield
             </CardTitle>
           </CardHeader>
-          <CardContent>{renderChart(tenYearData, chartColors.tenYear)}</CardContent>
+          <CardContent>{renderChart(tenYearData, chartColors.tenYear, "10Y Yield", true)}</CardContent>
         </Card>
       </div>
 
-      {/* Yield Spread */}
-      {twoYearData && tenYearData && (
+      {/* Yield Spread / Curve */}
+      {yieldSpread !== null && (
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-muted-foreground">Yield Curve Indicator</div>
+                <div className="text-sm text-muted-foreground">Yield Curve (10Y - 2Y Spread)</div>
                 <div className="text-lg font-semibold">
-                  {tenYearData.currentPrice > twoYearData.currentPrice ? (
-                    <span className="text-primary">Normal (IEF {">"} SHY)</span>
+                  {yieldSpread >= 0 ? (
+                    <span className="text-primary">Normal Curve</span>
                   ) : (
-                    <span className="text-destructive">Inverted (SHY {">"} IEF)</span>
+                    <span className="text-destructive">Inverted Curve ⚠️</span>
                   )}
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-sm text-muted-foreground">Price Spread</div>
-                <div className="text-lg font-mono">
-                  ${(tenYearData.currentPrice - twoYearData.currentPrice).toFixed(2)}
+                <div className="text-sm text-muted-foreground">Spread</div>
+                <div className={`text-xl font-mono ${yieldSpread >= 0 ? "text-primary" : "text-destructive"}`}>
+                  {yieldSpread >= 0 ? "+" : ""}{yieldSpread.toFixed(3)}%
                 </div>
               </div>
             </div>
             <div className="text-xs text-muted-foreground mt-2">
-              Note: ETF prices move inversely to yields. An inverted yield curve (short-term rates {">"} long-term) often signals recession risk.
+              {yieldSpread < 0 
+                ? "An inverted yield curve (2Y > 10Y) has historically preceded recessions."
+                : "A normal yield curve (10Y > 2Y) indicates healthy economic expectations."}
             </div>
           </CardContent>
         </Card>

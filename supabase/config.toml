@@ -44,3 +44,24 @@ verify_jwt = true
 
 [functions.ai-daily-brief]
 verify_jwt = true
+
+[functions.ai-portfolio-optimizer]
+verify_jwt = true
+
+[functions.smart-news-summarizer]
+verify_jwt = true
+
+[functions.check-alerts]
+verify_jwt = false
+
+[functions.smart-alerts]
+verify_jwt = true
+
+[functions.rate-limiter]
+verify_jwt = false
+
+[functions.market-sentiment]
+verify_jwt = false
+
+[functions.get-treasury-vix]
+verify_jwt = false
