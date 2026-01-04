@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -9,6 +9,12 @@ import {
   clearRateLimit, 
   getRateLimitMessage 
 } from '@/lib/authRateLimit';
+import {
+  initSessionManager,
+  cleanupSessionManager,
+  extendSession,
+  getRemainingSessionTime
+} from '@/lib/sessionManager';
 
 // Subscription tiers configuration
 export const SUBSCRIPTION_TIERS = {
@@ -137,6 +143,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Session expiry warning handler
+  const handleSessionWarning = useCallback((remainingMs: number) => {
+    const minutes = Math.ceil(remainingMs / 60000);
+    toast({
+      title: "Session expiring soon",
+      description: `Your session will expire in ${minutes} minute(s) due to inactivity. Click anywhere to stay logged in.`,
+      duration: 10000,
+    });
+  }, [toast]);
+
+  // Session expired handler
+  const handleSessionExpired = useCallback(() => {
+    toast({
+      title: "Session expired",
+      description: "You have been logged out due to inactivity.",
+      variant: "destructive",
+    });
+  }, [toast]);
+
   useEffect(() => {
     // Set up auth state listener
     const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(
@@ -154,6 +179,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
           // Check subscription after sign in
           setTimeout(() => checkSubscription(), 100);
+          
+          // Initialize session manager for timeout tracking
+          initSessionManager({
+            onSessionExpired: handleSessionExpired,
+            onSessionWarning: handleSessionWarning,
+          });
         }
         
         if (event === 'SIGNED_OUT') {
@@ -164,6 +195,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             subscriptionEnd: null,
             aiCallsLimit: 0,
           });
+          // Cleanup session manager
+          cleanupSessionManager();
+        }
+        
+        if (event === 'TOKEN_REFRESHED') {
+          console.log('[AuthContext] Token refreshed successfully');
         }
       }
     );
@@ -173,10 +210,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      
+      // Initialize session manager if already logged in
+      if (session) {
+        initSessionManager({
+          onSessionExpired: handleSessionExpired,
+          onSessionWarning: handleSessionWarning,
+        });
+      }
     });
 
-    return () => authSubscription.unsubscribe();
-  }, [toast]);
+    return () => {
+      authSubscription.unsubscribe();
+      cleanupSessionManager();
+    };
+  }, [toast, handleSessionExpired, handleSessionWarning]);
 
   // Check subscription when session changes
   useEffect(() => {

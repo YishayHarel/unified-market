@@ -1,49 +1,37 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import { 
+  checkRateLimit, 
+  getClientIdentifier, 
+  createRateLimitResponse, 
+  getRateLimitHeaders,
+  RATE_LIMIT_TIERS 
+} from "../_shared/rate-limit.ts";
 
-// CORS configuration - restrict to allowed origins
-const ALLOWED_ORIGINS = [
-  'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
-  'https://lovable.dev',
-  'http://localhost:8080',
-  'http://localhost:5173'
-];
+// Simple in-memory cache with TTL (server-side)
+const priceCache = new Map<string, { data: any; expiry: number }>();
+const CACHE_TTL_MS = 30 * 1000; // 30 seconds cache for better freshness
 
-function getCorsHeaders(origin: string | null): Record<string, string> {
-  const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
-    ? origin 
-    : ALLOWED_ORIGINS[0];
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  };
+function getCached(symbol: string): any | null {
+  const cached = priceCache.get(symbol);
+  if (cached && Date.now() < cached.expiry) {
+    return cached.data;
+  }
+  priceCache.delete(symbol); // Clean up expired entry
+  return null;
 }
 
-// Rate limiting - prevent abuse
-interface RateLimit {
-  count: number;
-  resetTime: number;
-}
-const rateLimits = new Map<string, RateLimit>();
-const MAX_REQUESTS_PER_MINUTE = 30; // Per IP
-const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
-  const now = Date.now();
-  const limit = rateLimits.get(identifier);
-
-  if (!limit || now > limit.resetTime) {
-    rateLimits.set(identifier, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
-    return { allowed: true, remaining: MAX_REQUESTS_PER_MINUTE - 1 };
+function setCache(symbol: string, data: any): void {
+  // Limit cache size to prevent memory issues
+  if (priceCache.size > 1000) {
+    // Remove oldest entries
+    const entries = Array.from(priceCache.entries());
+    entries.sort((a, b) => a[1].expiry - b[1].expiry);
+    for (let i = 0; i < 200; i++) {
+      priceCache.delete(entries[i][0]);
+    }
   }
-
-  if (limit.count >= MAX_REQUESTS_PER_MINUTE) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  limit.count++;
-  rateLimits.set(identifier, limit);
-  return { allowed: true, remaining: MAX_REQUESTS_PER_MINUTE - limit.count };
+  priceCache.set(symbol, { data, expiry: Date.now() + CACHE_TTL_MS });
 }
 
 // Simple in-memory cache with TTL
@@ -148,32 +136,20 @@ serve(async (req) => {
   const corsHeaders = getCorsHeaders(origin);
   
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+    return handleCorsPreflightRequest(origin);
   }
 
   try {
-    // Rate limiting by IP
-    const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
-                     req.headers.get('cf-connecting-ip') || 
-                     'unknown';
+    // Rate limiting using shared utility
+    const clientId = getClientIdentifier(req);
+    const rateCheck = checkRateLimit(clientId, RATE_LIMIT_TIERS.data);
     
-    const rateCheck = checkRateLimit(clientIP);
     if (!rateCheck.allowed) {
-      console.log(`Rate limit exceeded for IP: ${clientIP}`);
-      return new Response(
-        JSON.stringify({ error: 'Rate limit exceeded. Please wait before making more requests.' }),
-        { 
-          status: 429, 
-          headers: { 
-            ...corsHeaders, 
-            'Content-Type': 'application/json',
-            'Retry-After': '60'
-          } 
-        }
-      );
+      console.log(`Rate limit exceeded for: ${clientId}`);
+      return createRateLimitResponse(rateCheck, corsHeaders);
     }
 
-    console.log(`Get-stock-prices called (IP: ${clientIP}, remaining: ${rateCheck.remaining})`)
+    console.log(`Get-stock-prices called (client: ${clientId.substring(0, 10)}..., remaining: ${rateCheck.remaining})`)
     
     let requestBody;
     try {

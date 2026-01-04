@@ -13,5 +13,23 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
-  }
+    detectSessionInUrl: true,
+    // Session expires after 1 hour of inactivity (server-side)
+    // Client-side timeout is handled by sessionManager.ts
+  },
+  global: {
+    headers: {
+      'x-client-info': 'unified-market-app',
+    },
+  },
+  // Realtime configuration for scalability
+  realtime: {
+    params: {
+      eventsPerSecond: 10, // Limit realtime events to prevent flooding
+    },
+  },
+  // DB configuration for better pooling
+  db: {
+    schema: 'public',
+  },
 });
