@@ -3,11 +3,24 @@ import { Resend } from "npm:resend@2.0.0";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+// CORS configuration - restrict to allowed origins
+const ALLOWED_ORIGINS = [
+  'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
+  'https://lovable.dev',
+  'http://localhost:8080',
+  'http://localhost:5173'
+];
+
+function getCorsHeaders(origin: string | null): Record<string, string> {
+  const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
+    ? origin 
+    : ALLOWED_ORIGINS[0];
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+}
 
 interface EmailRequest {
   to: string;
@@ -17,6 +30,9 @@ interface EmailRequest {
 }
 
 const handler = async (req: Request): Promise<Response> => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+  
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });

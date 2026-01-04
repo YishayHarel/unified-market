@@ -3,6 +3,12 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { analytics } from '@/hooks/useAnalytics';
+import { 
+  checkAuthRateLimit, 
+  recordFailedAttempt, 
+  clearRateLimit, 
+  getRateLimitMessage 
+} from '@/lib/authRateLimit';
 
 // Subscription tiers configuration
 export const SUBSCRIPTION_TIERS = {
@@ -218,17 +224,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
+    // Check rate limit before attempting sign in
+    const rateLimitStatus = checkAuthRateLimit(email);
+    const warningMessage = getRateLimitMessage(rateLimitStatus);
+    
+    if (!rateLimitStatus.allowed) {
+      toast({
+        title: "Too many attempts",
+        description: warningMessage || "Please try again later.",
+        variant: "destructive",
+      });
+      return { error: new Error(warningMessage || "Rate limited") };
+    }
+
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
+      // Record failed attempt
+      recordFailedAttempt(email);
+      
+      // Get updated status for warning
+      const updatedStatus = checkAuthRateLimit(email);
+      const attemptWarning = getRateLimitMessage(updatedStatus);
+      
       toast({
         title: "Sign in failed",
-        description: error.message,
+        description: attemptWarning 
+          ? `${error.message}. ${attemptWarning}` 
+          : error.message,
         variant: "destructive",
       });
+    } else {
+      // Clear rate limit on success
+      clearRateLimit(email);
     }
 
     return { error };
