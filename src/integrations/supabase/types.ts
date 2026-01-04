@@ -217,6 +217,30 @@ export type Database = {
           },
         ]
       }
+      morning_briefs: {
+        Row: {
+          brief_data: Json
+          created_at: string
+          generated_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          brief_data: Json
+          created_at?: string
+          generated_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          brief_data?: Json
+          created_at?: string
+          generated_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       news_sentiment: {
         Row: {
           comment: string | null
