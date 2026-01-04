@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.get-treasury-vix]
 verify_jwt = false
+
+[functions.morning-market-brief]
+verify_jwt = true
