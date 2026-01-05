@@ -2,6 +2,13 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
+// Valid product IDs for subscription verification
+const VALID_PRODUCT_IDS = [
+  'prod_ThDN3TeB13Pusx', // basic
+  'prod_ThDNk8xTBMxIGN', // premium
+  'prod_ThDO59bJiy1UPG', // unlimited
+];
+
 // CORS configuration - restrict to allowed origins
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
@@ -22,9 +29,39 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
 }
 
 const logStep = (step: string, details?: any) => {
-  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
+  // Sanitize details to avoid logging sensitive data
+  const safeDetails = details ? Object.fromEntries(
+    Object.entries(details).map(([k, v]) => [
+      k,
+      k.includes('key') || k.includes('token') || k.includes('secret') || k.includes('email')
+        ? '[REDACTED]' 
+        : v
+    ])
+  ) : undefined;
+  const detailsStr = safeDetails ? ` - ${JSON.stringify(safeDetails)}` : '';
   console.log(`[CHECK-SUBSCRIPTION] ${step}${detailsStr}`);
 };
+
+// Safe error response - never expose internal details
+function safeErrorResponse(error: unknown, corsHeaders: Record<string, string>): Response {
+  const isOperational = error instanceof Error && (
+    error.message.includes('Authentication') ||
+    error.message.includes('authorization') ||
+    error.message.includes('authenticated')
+  );
+  
+  const message = isOperational && error instanceof Error
+    ? error.message 
+    : 'An error occurred checking your subscription';
+  
+  // Log full error for debugging
+  console.error('[CHECK-SUBSCRIPTION] Error:', error);
+  
+  return new Response(JSON.stringify({ error: message }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status: 400,
+  });
+}
 
 serve(async (req) => {
   const origin = req.headers.get('origin');
@@ -44,7 +81,10 @@ serve(async (req) => {
     logStep("Function started");
 
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeKey) throw new Error("STRIPE_SECRET_KEY is not set");
+    if (!stripeKey) {
+      console.error('[CHECK-SUBSCRIPTION] STRIPE_SECRET_KEY not configured');
+      throw new Error("Payment service configuration error");
+    }
     logStep("Stripe key verified");
 
     const authHeader = req.headers.get("Authorization");
@@ -52,13 +92,13 @@ serve(async (req) => {
     logStep("Authorization header found");
 
     const token = authHeader.replace("Bearer ", "");
-    logStep("Authenticating user with token");
+    logStep("Authenticating user");
     
     const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
     if (userError) throw new Error(`Authentication error: ${userError.message}`);
     const user = userData.user;
     if (!user?.email) throw new Error("User not authenticated or email not available");
-    logStep("User authenticated", { userId: user.id, email: user.email });
+    logStep("User authenticated", { userId: user.id });
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
@@ -72,7 +112,7 @@ serve(async (req) => {
     }
 
     const customerId = customers.data[0].id;
-    logStep("Found Stripe customer", { customerId });
+    logStep("Found Stripe customer");
 
     const subscriptions = await stripe.subscriptions.list({
       customer: customerId,
@@ -86,11 +126,32 @@ serve(async (req) => {
 
     if (hasActiveSub) {
       const subscription = subscriptions.data[0];
-      subscriptionEnd = new Date(subscription.current_period_end * 1000).toISOString();
-      logStep("Active subscription found", { subscriptionId: subscription.id, endDate: subscriptionEnd });
-      productId = subscription.items.data[0].price.product;
+      const rawProductId = subscription.items.data[0].price.product as string;
+      
+      // BUSINESS LOGIC: Verify product ID is valid before trusting it
+      if (!VALID_PRODUCT_IDS.includes(rawProductId)) {
+        console.error('[CHECK-SUBSCRIPTION] Invalid product ID from Stripe:', rawProductId);
+        // Don't expose that we detected an invalid product - just treat as unsubscribed
+        return new Response(JSON.stringify({ subscribed: false }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
+      
+      // BUSINESS LOGIC: Verify subscription hasn't actually expired
+      const endTimestamp = subscription.current_period_end * 1000;
+      if (endTimestamp < Date.now()) {
+        logStep("Subscription period has expired");
+        return new Response(JSON.stringify({ subscribed: false }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
+      
+      subscriptionEnd = new Date(endTimestamp).toISOString();
+      productId = rawProductId;
       priceId = subscription.items.data[0].price.id;
-      logStep("Determined subscription tier", { productId, priceId });
+      logStep("Active subscription verified", { subscriptionId: subscription.id });
     } else {
       logStep("No active subscription found");
     }
@@ -105,11 +166,6 @@ serve(async (req) => {
       status: 200,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logStep("ERROR in check-subscription", { message: errorMessage });
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
-    });
+    return safeErrorResponse(error, corsHeaders);
   }
 });
