@@ -34,23 +34,6 @@ function setCache(symbol: string, data: any): void {
   priceCache.set(symbol, { data, expiry: Date.now() + CACHE_TTL_MS });
 }
 
-// Simple in-memory cache with TTL
-const priceCache = new Map<string, { data: any; expiry: number }>();
-const CACHE_TTL_MS = 60 * 1000; // 1 minute cache for real-time feel
-
-function getCached(symbol: string): any | null {
-  const cached = priceCache.get(symbol);
-  if (cached && Date.now() < cached.expiry) {
-    console.log(`Cache hit for ${symbol}`);
-    return cached.data;
-  }
-  return null;
-}
-
-function setCache(symbol: string, data: any): void {
-  priceCache.set(symbol, { data, expiry: Date.now() + CACHE_TTL_MS });
-}
-
 /**
  * Fetch price from Finnhub API
  */
