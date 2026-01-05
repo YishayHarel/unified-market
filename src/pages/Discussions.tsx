@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDiscussionLikes } from "@/hooks/useDiscussionLikes";
 import { useDiscussionRealtime } from "@/hooks/useDiscussionRealtime";
+import { sanitizeText, titleSchema, contentSchema } from "@/lib/security";
 import { 
   MessageSquare, 
   Hash, 
@@ -203,8 +204,17 @@ const Discussions = () => {
       return;
     }
 
-    if (!newPost.title.trim() || !newPost.content.trim()) {
-      toast({ title: "Please fill in title and content", variant: "destructive" });
+    // Validate and sanitize input
+    const titleResult = titleSchema.safeParse(newPost.title);
+    const contentResult = contentSchema.safeParse(newPost.content);
+
+    if (!titleResult.success) {
+      toast({ title: "Invalid title", description: titleResult.error.errors[0]?.message, variant: "destructive" });
+      return;
+    }
+
+    if (!contentResult.success) {
+      toast({ title: "Invalid content", description: contentResult.error.errors[0]?.message, variant: "destructive" });
       return;
     }
 
@@ -214,8 +224,8 @@ const Discussions = () => {
         .insert({
           channel_id: selectedChannel.id,
           user_id: user.id,
-          title: newPost.title,
-          content: newPost.content
+          title: titleResult.data,
+          content: contentResult.data
         });
 
       if (error) throw error;
@@ -235,7 +245,12 @@ const Discussions = () => {
       return;
     }
 
-    if (!newReply.trim()) return;
+    // Validate and sanitize reply content
+    const contentResult = contentSchema.safeParse(newReply);
+    if (!contentResult.success) {
+      toast({ title: "Invalid reply", description: contentResult.error.errors[0]?.message, variant: "destructive" });
+      return;
+    }
 
     try {
       const { error } = await supabase
@@ -243,7 +258,7 @@ const Discussions = () => {
         .insert({
           post_id: selectedPost.id,
           user_id: user.id,
-          content: newReply
+          content: contentResult.data
         });
 
       if (error) throw error;

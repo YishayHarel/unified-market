@@ -2,6 +2,13 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
+// Valid price IDs - must match exactly for security
+const VALID_PRICE_IDS = [
+  'price_1SjowV8Eyj3l9vnAJTlpDmKb', // basic
+  'price_1Sjox28Eyj3l9vnAzyqtuewV', // premium
+  'price_1SjoxF8Eyj3l9vnAdUJ9Iepb', // unlimited
+];
+
 // CORS configuration - restrict to allowed origins
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
@@ -22,9 +29,39 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
 }
 
 const logStep = (step: string, details?: any) => {
-  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
+  // Sanitize details to avoid logging sensitive data
+  const safeDetails = details ? Object.fromEntries(
+    Object.entries(details).map(([k, v]) => [
+      k,
+      k.includes('key') || k.includes('token') || k.includes('secret') 
+        ? '[REDACTED]' 
+        : v
+    ])
+  ) : undefined;
+  const detailsStr = safeDetails ? ` - ${JSON.stringify(safeDetails)}` : '';
   console.log(`[CREATE-CHECKOUT] ${step}${detailsStr}`);
 };
+
+// Safe error response - never expose internal details
+function safeErrorResponse(error: unknown, corsHeaders: Record<string, string>): Response {
+  const isOperational = error instanceof Error && (
+    error.message.includes('Price ID') ||
+    error.message.includes('User not authenticated') ||
+    error.message.includes('required')
+  );
+  
+  const message = isOperational && error instanceof Error
+    ? error.message 
+    : 'An error occurred processing your request';
+  
+  // Log full error for debugging
+  console.error('[CREATE-CHECKOUT] Error:', error);
+  
+  return new Response(JSON.stringify({ error: message }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status: 400,
+  });
+}
 
 serve(async (req) => {
   const origin = req.headers.get('origin');
@@ -42,18 +79,48 @@ serve(async (req) => {
   try {
     logStep("Function started");
     
-    const { priceId } = await req.json();
-    if (!priceId) throw new Error("Price ID is required");
-    logStep("Price ID received", { priceId });
+    // Parse and validate request body
+    let body: { priceId?: string };
+    try {
+      body = await req.json();
+    } catch {
+      throw new Error("Invalid request body");
+    }
 
-    const authHeader = req.headers.get("Authorization")!;
+    const { priceId } = body;
+    
+    // BUSINESS LOGIC: Validate priceId is a known valid price
+    if (!priceId || typeof priceId !== 'string') {
+      throw new Error("Price ID is required");
+    }
+    
+    if (!VALID_PRICE_IDS.includes(priceId)) {
+      logStep("Invalid price ID attempted", { priceId });
+      throw new Error("Invalid Price ID");
+    }
+    
+    logStep("Price ID validated", { priceId });
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) throw new Error("User not authenticated");
+    
     const token = authHeader.replace("Bearer ", "");
-    const { data } = await supabaseClient.auth.getUser(token);
+    const { data, error: authError } = await supabaseClient.auth.getUser(token);
+    
+    if (authError || !data.user?.email) {
+      throw new Error("User not authenticated or email not available");
+    }
+    
     const user = data.user;
-    if (!user?.email) throw new Error("User not authenticated or email not available");
-    logStep("User authenticated", { userId: user.id, email: user.email });
+    logStep("User authenticated", { userId: user.id });
 
-    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeKey) {
+      console.error('[CREATE-CHECKOUT] STRIPE_SECRET_KEY not configured');
+      throw new Error("Payment service configuration error");
+    }
+
+    const stripe = new Stripe(stripeKey, {
       apiVersion: "2025-08-27.basil",
     });
 
@@ -61,8 +128,13 @@ serve(async (req) => {
     let customerId;
     if (customers.data.length > 0) {
       customerId = customers.data[0].id;
-      logStep("Existing customer found", { customerId });
+      logStep("Existing customer found");
     }
+
+    // Build return URL from allowed origins only
+    const returnOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, '')))
+      ? origin
+      : ALLOWED_ORIGINS[0];
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -74,22 +146,17 @@ serve(async (req) => {
         },
       ],
       mode: "subscription",
-      success_url: `${req.headers.get("origin")}/subscription?success=true`,
-      cancel_url: `${req.headers.get("origin")}/subscription?canceled=true`,
+      success_url: `${returnOrigin}/subscription?success=true`,
+      cancel_url: `${returnOrigin}/subscription?canceled=true`,
     });
 
-    logStep("Checkout session created", { sessionId: session.id, url: session.url });
+    logStep("Checkout session created", { sessionId: session.id });
 
     return new Response(JSON.stringify({ url: session.url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logStep("ERROR", { message: errorMessage });
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
-    });
+    return safeErrorResponse(error, corsHeaders);
   }
 });
