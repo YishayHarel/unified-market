@@ -21,39 +21,106 @@ const VolumeProfile = () => {
   const [stocks, setStocks] = useState<VolumeStock[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchVolumeData = async () => {
-      try {
-        // Get stocks with high relative volume
-        const { data: stocksData } = await supabase
-          .from("stocks")
-          .select("symbol, name, rel_volume, avg_volume, last_return_1d")
-          .not("rel_volume", "is", null)
-          .order("rel_volume", { ascending: false })
-          .limit(20);
+const DEFAULT_VOLUME_SYMBOLS = [
+  "COIN",
+  "XLE",
+  "XOM",
+  "CVX",
+  "OXY",
+  "SLB",
+  "AAPL",
+  "NVDA",
+  "TSLA",
+  "SPY",
+];
 
-        if (stocksData) {
-          const volumeStocks: VolumeStock[] = stocksData.map((s) => ({
-            symbol: s.symbol,
-            name: s.name,
-            relVolume: s.rel_volume || 1,
-            avgVolume: s.avg_volume || 0,
-            currentVolume: (s.avg_volume || 0) * (s.rel_volume || 1),
-            change: s.last_return_1d || 0,
-          }));
-          setStocks(volumeStocks);
-        }
-      } catch (error) {
-        console.error("Error fetching volume data:", error);
-      } finally {
-        setLoading(false);
+useEffect(() => {
+  const fetchVolumeData = async () => {
+    setLoading(true);
+
+    try {
+      let symbols: string[] = [];
+
+      // Prefer the user's watchlist when available
+      if (user) {
+        const { data: savedStocks } = await supabase
+          .from("user_saved_stocks")
+          .select("symbol")
+          .eq("user_id", user.id)
+          .limit(12);
+
+        symbols = savedStocks?.map((s) => s.symbol) || [];
       }
-    };
 
-    fetchVolumeData();
-    const interval = setInterval(fetchVolumeData, 60000);
-    return () => clearInterval(interval);
-  }, [user]);
+      const mergedSymbols = Array.from(new Set([...symbols, ...DEFAULT_VOLUME_SYMBOLS]))
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean)
+        .slice(0, 12);
+
+      const settled = await Promise.allSettled(
+        mergedSymbols.map(async (symbol): Promise<VolumeStock | null> => {
+          const { data, error } = await supabase.functions.invoke("get-stock-candles", {
+            body: { symbol, period: "1M" },
+          });
+
+          if (error || !data?.candles || data.candles.length < 5) return null;
+
+          const candles = data.candles as Array<{
+            close: number;
+            volume: number | null;
+          }>;
+
+          const last = candles[candles.length - 1];
+          const prev = candles[candles.length - 2];
+
+          const lookbackVolumes = candles
+            .slice(Math.max(0, candles.length - 21), Math.max(0, candles.length - 1))
+            .map((c) => c.volume)
+            .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0);
+
+          const avgVolume =
+            lookbackVolumes.length > 0
+              ? lookbackVolumes.reduce((a, b) => a + b, 0) / lookbackVolumes.length
+              : 0;
+
+          const currentVolume = typeof last.volume === "number" && Number.isFinite(last.volume) ? last.volume : 0;
+          const relVolume = avgVolume > 0 ? currentVolume / avgVolume : 0;
+
+          const change = prev?.close ? ((last.close - prev.close) / prev.close) * 100 : 0;
+
+          if (!Number.isFinite(relVolume) || relVolume <= 0) return null;
+
+          return {
+            symbol,
+            name: symbol,
+            relVolume,
+            avgVolume,
+            currentVolume,
+            change,
+          };
+        })
+      );
+
+      const volumeStocks = settled
+        .filter((r): r is PromiseFulfilledResult<VolumeStock | null> => r.status === "fulfilled")
+        .map((r) => r.value)
+        .filter((v): v is VolumeStock => !!v)
+        .sort((a, b) => b.relVolume - a.relVolume);
+
+      setStocks(volumeStocks);
+    } catch (error) {
+      console.error("Error fetching volume data:", error);
+      setStocks([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchVolumeData();
+  const interval = setInterval(fetchVolumeData, 2 * 60 * 1000);
+  return () => clearInterval(interval);
+}, [user]);
+
 
   const formatVolume = (vol: number): string => {
     if (vol >= 1e9) return `${(vol / 1e9).toFixed(2)}B`;
@@ -116,11 +183,25 @@ const VolumeProfile = () => {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {unusualVolume.length > 0 ? (
+        {stocks.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No volume data available right now.
+          </div>
+        ) : (
           <div className="space-y-2">
-            <h4 className="text-sm font-medium text-muted-foreground">Unusual Volume</h4>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <h4 className="text-sm font-medium text-muted-foreground">
+                {unusualVolume.length > 0 ? "Unusual Volume" : "Highest Relative Volume"}
+              </h4>
+              {unusualVolume.length === 0 && (
+                <span className="text-xs text-muted-foreground">
+                  No stocks above 1.5x — showing top volume vs. 20-day avg
+                </span>
+              )}
+            </div>
+
             <div className="space-y-2">
-              {unusualVolume.slice(0, 10).map((stock) => (
+              {(unusualVolume.length > 0 ? unusualVolume : stocks).slice(0, 10).map((stock) => (
                 <div
                   key={stock.symbol}
                   className="flex items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
@@ -141,50 +222,50 @@ const VolumeProfile = () => {
                       <div className={`text-lg font-bold ${getVolumeColor(stock.relVolume)}`}>
                         {stock.relVolume.toFixed(2)}x
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        Rel. Volume
-                      </div>
+                      <div className="text-xs text-muted-foreground">Rel. Volume</div>
                     </div>
 
                     <div className="text-right min-w-[60px]">
-                      <div className={`flex items-center justify-end ${stock.change >= 0 ? "text-green-500" : "text-red-500"}`}>
+                      <div
+                        className={`flex items-center justify-end ${stock.change >= 0 ? "text-green-500" : "text-red-500"}`}
+                      >
                         {stock.change >= 0 ? (
                           <TrendingUp className="h-3 w-3 mr-1" />
                         ) : (
                           <TrendingDown className="h-3 w-3 mr-1" />
                         )}
-                        {stock.change >= 0 ? "+" : ""}{stock.change.toFixed(2)}%
+                        {stock.change >= 0 ? "+" : ""}
+                        {stock.change.toFixed(2)}%
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatVolume(stock.currentVolume)}
-                      </div>
+                      <div className="text-xs text-muted-foreground">{formatVolume(stock.currentVolume)}</div>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
-        ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            No unusual volume detected at this time.
-          </div>
         )}
 
         {/* Volume bar visualization */}
-        {unusualVolume.length > 0 && (
+        {stocks.length > 0 && (
           <div className="space-y-1">
             <h4 className="text-sm font-medium text-muted-foreground">Volume Distribution</h4>
             <div className="space-y-1">
-              {unusualVolume.slice(0, 5).map((stock) => (
+              {(unusualVolume.length > 0 ? unusualVolume : stocks).slice(0, 5).map((stock) => (
                 <div key={stock.symbol} className="flex items-center gap-2">
                   <span className="text-xs w-12 text-right">{stock.symbol}</span>
                   <div className="flex-1 h-4 bg-muted rounded overflow-hidden">
                     <div
                       className={`h-full transition-all ${
-                        stock.relVolume >= 3 ? "bg-red-500" :
-                        stock.relVolume >= 2 ? "bg-orange-500" : "bg-yellow-500"
+                        stock.relVolume >= 3
+                          ? "bg-red-500"
+                          : stock.relVolume >= 2
+                            ? "bg-orange-500"
+                            : stock.relVolume >= 1.5
+                              ? "bg-yellow-500"
+                              : "bg-primary"
                       }`}
-                      style={{ width: `${Math.min(stock.relVolume / 5 * 100, 100)}%` }}
+                      style={{ width: `${Math.min((stock.relVolume / 5) * 100, 100)}%` }}
                     />
                   </div>
                   <span className="text-xs w-12">{stock.relVolume.toFixed(1)}x</span>
@@ -194,6 +275,7 @@ const VolumeProfile = () => {
           </div>
         )}
       </CardContent>
+
     </Card>
   );
 };
