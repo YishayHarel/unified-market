@@ -1,23 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-// CORS configuration - restrict to allowed origins
-const ALLOWED_ORIGINS = [
-  'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
-  'https://lovable.dev',
-  'http://localhost:8080',
-  'http://localhost:5173'
-];
+// CORS (public edge function; allow all origins)
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 
-function getCorsHeaders(origin: string | null): Record<string, string> {
-  const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
-    ? origin 
-    : ALLOWED_ORIGINS[0];
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  };
-}
 
 // Rate limiting - prevent abuse
 interface RateLimit {
@@ -447,12 +436,10 @@ function calculateIndicators(candles: any[]) {
 }
 
 serve(async (req) => {
-  const origin = req.headers.get('origin');
-  const corsHeaders = getCorsHeaders(origin);
-  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
 
   try {
     // Rate limiting by IP
