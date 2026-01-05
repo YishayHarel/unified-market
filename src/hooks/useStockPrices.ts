@@ -159,7 +159,7 @@ export function useStockPrices(symbols: string[]) {
     const symbolsKey = [...symbols].sort().join(',');
     const prevSymbolsKey = [...symbolsRef.current].sort().join(',');
     
-    if (symbolsKey !== prevSymbolsKey) {
+    if (symbolsKey !== prevSymbolsKey || (symbols.length > 0 && prices.size === 0)) {
       symbolsRef.current = [...symbols];
       refresh();
     }
@@ -170,13 +170,6 @@ export function useStockPrices(symbols: string[]) {
       }
     };
   }, [symbols, refresh]);
-
-  // Initial fetch
-  useEffect(() => {
-    if (symbols.length > 0 && prices.size === 0) {
-      refresh();
-    }
-  }, []);
 
   return { prices, loading, error, refresh };
 }
