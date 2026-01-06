@@ -1,20 +1,17 @@
-/**
- * Check Subscription Edge Function
- * Verifies user subscription status via Stripe API.
- */
+// Check Subscription - Verifies user subscription status via Stripe API
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
-/** Valid Stripe product IDs for subscription tiers */
+// Valid Stripe product IDs for subscription tiers
 const VALID_PRODUCT_IDS = [
   'prod_ThDN3TeB13Pusx',
   'prod_ThDNk8xTBMxIGN',
   'prod_ThDO59bJiy1UPG',
 ];
 
-/** Allowed origins for CORS */
+// Allowed origins for CORS
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
@@ -22,7 +19,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173'
 ];
 
-/** Generates CORS headers based on request origin */
+// Returns CORS headers, echoing back allowed origins or defaulting to first
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
     ? origin 
@@ -35,7 +32,7 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
-/** Logs steps with redacted sensitive data */
+// Logs with redacted sensitive fields like keys/tokens/emails
 const logStep = (step: string, details?: any) => {
   const sensitiveFields = ['key', 'token', 'secret', 'email', 'password'];
   
@@ -50,7 +47,7 @@ const logStep = (step: string, details?: any) => {
   console.log(`[CHECK-SUBSCRIPTION] ${step}${detailsStr}`);
 };
 
-/** Creates safe error response without leaking internal details */
+// Returns safe error without leaking internal details
 function safeErrorResponse(error: unknown, corsHeaders: Record<string, string>): Response {
   const isOperational = error instanceof Error && (
     error.message.includes('Authentication') ||
@@ -70,7 +67,7 @@ function safeErrorResponse(error: unknown, corsHeaders: Record<string, string>):
   });
 }
 
-/** Main request handler */
+// Main request handler
 serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
