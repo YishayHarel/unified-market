@@ -1,6 +1,8 @@
+// Get News - Fetches financial news from Finnhub with rate limiting
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-// CORS configuration - restrict to allowed origins
+// Allowed origins for CORS
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
@@ -8,6 +10,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173'
 ];
 
+// Returns CORS headers based on origin
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
     ? origin 
@@ -19,7 +22,7 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
-// Rate limiting - prevent abuse
+// Rate limiting
 interface RateLimit {
   count: number;
   resetTime: number;
@@ -28,6 +31,7 @@ const rateLimits = new Map<string, RateLimit>();
 const MAX_REQUESTS_PER_MINUTE = 20;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
+// Checks rate limit for identifier
 function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
   const now = Date.now();
   const limit = rateLimits.get(identifier);
@@ -50,30 +54,28 @@ serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
-    // Rate limiting by IP
+    // Rate limit by IP
     const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
-                     req.headers.get('cf-connecting-ip') || 
-                     'unknown';
+                     req.headers.get('cf-connecting-ip') || 'unknown';
     
     const rateCheck = checkRateLimit(clientIP);
     if (!rateCheck.allowed) {
       console.log(`Rate limit exceeded for IP: ${clientIP}`);
       return new Response(
         JSON.stringify({ error: 'Rate limit exceeded', articles: [] }),
-        { 
-          status: 429, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' } 
-        }
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' } }
       );
     }
 
     console.log(`Get-news called (IP: ${clientIP}, remaining: ${rateCheck.remaining})`)
 
+    // Parse request body
     let requestBody;
     try {
       requestBody = await req.json()
@@ -82,18 +84,12 @@ serve(async (req) => {
       requestBody = {}
     }
     
-    const { 
-      pageSize = 20,
-      symbol,
-      companyName 
-    } = requestBody
+    const { pageSize = 20, symbol, companyName } = requestBody
     
-    // SECURITY: Validate and sanitize symbol input to prevent injection
+    // Sanitize inputs
     const sanitizedSymbol = symbol 
       ? String(symbol).replace(/[^A-Za-z0-9.]/g, '').toUpperCase().slice(0, 10)
       : undefined;
-    
-    // SECURITY: Validate pageSize is reasonable
     const validPageSize = Math.min(Math.max(1, Number(pageSize) || 20), 50);
     
     console.log(`Fetching news: symbol=${sanitizedSymbol}, pageSize=${validPageSize}`)
@@ -104,32 +100,27 @@ serve(async (req) => {
       throw new Error('FINNHUB_API_KEY not found')
     }
 
+    // Build URL based on whether we have a symbol
     let url: string;
-    
     if (sanitizedSymbol) {
-      // Stock-specific news - use sanitized symbol
       const today = new Date();
       const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
       const fromDate = weekAgo.toISOString().split('T')[0];
       const toDate = today.toISOString().split('T')[0];
-      
-      // SECURITY: Using sanitized symbol prevents injection
       url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(sanitizedSymbol)}&from=${fromDate}&to=${toDate}&token=${finnhubKey}`;
       console.log(`Fetching company news for ${sanitizedSymbol}`);
     } else {
-      // General market news
       url = `https://finnhub.io/api/v1/news?category=general&token=${finnhubKey}`;
       console.log('Fetching general market news');
     }
     
+    // Fetch with timeout
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 8000)
     
     const response = await fetch(url, { 
       signal: controller.signal,
-      headers: {
-        'User-Agent': 'UnifiedMarket/1.0'
-      }
+      headers: { 'User-Agent': 'UnifiedMarket/1.0' }
     })
     clearTimeout(timeoutId)
     console.log(`Finnhub response status: ${response.status}`)
@@ -143,7 +134,7 @@ serve(async (req) => {
     const data = await response.json()
     console.log(`Finnhub returned ${Array.isArray(data) ? data.length : 0} articles`)
     
-    // Transform Finnhub format to match our frontend expected format
+    // Transform to frontend format
     const articles = (Array.isArray(data) ? data : [])
       .filter((article: any) => article.headline && article.url)
       .slice(0, validPageSize)
@@ -159,16 +150,8 @@ serve(async (req) => {
     // Deduplicate by similar titles
     const seenTitles = new Set<string>();
     const deduplicatedArticles = articles.filter((article: any) => {
-      const normalizedTitle = article.title
-        .toLowerCase()
-        .replace(/[^\w\s]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 50);
-      
-      if (seenTitles.has(normalizedTitle)) {
-        return false;
-      }
+      const normalizedTitle = article.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim().slice(0, 50);
+      if (seenTitles.has(normalizedTitle)) return false;
       seenTitles.add(normalizedTitle);
       return true;
     });
@@ -177,23 +160,13 @@ serve(async (req) => {
     
     return new Response(
       JSON.stringify({ articles: deduplicatedArticles, status: 'ok' }),
-      { 
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json',
-          'Cache-Control': 'max-age=120' // 2 minute cache for fresh news
-        },
-        status: 200,
-      },
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'max-age=120' }, status: 200 }
     )
   } catch (error) {
     console.error('Error in get-news function:', error.message)
     return new Response(
       JSON.stringify({ error: error.message, articles: [] }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      },
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }
 })

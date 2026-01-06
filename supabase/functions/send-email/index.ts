@@ -1,9 +1,11 @@
+// Send Email - Sends emails via Resend API
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "npm:resend@2.0.0";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
-// CORS configuration - restrict to allowed origins
+// Allowed origins for CORS
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
@@ -11,6 +13,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173'
 ];
 
+// Returns CORS headers, echoing back allowed origins or defaulting to first
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
     ? origin 
@@ -33,7 +36,7 @@ const handler = async (req: Request): Promise<Response> => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
-  // Handle CORS preflight requests
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -43,10 +46,12 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`[SEND-EMAIL] Sending email to: ${to}, subject: ${subject}`);
 
+    // Validate required fields
     if (!to || !subject || !html) {
       throw new Error("Missing required fields: to, subject, and html are required");
     }
 
+    // Send via Resend
     const emailResponse = await resend.emails.send({
       from: from || "Yish <onboarding@resend.dev>",
       to: [to],
@@ -58,19 +63,13 @@ const handler = async (req: Request): Promise<Response> => {
 
     return new Response(JSON.stringify(emailResponse), {
       status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        ...corsHeaders,
-      },
+      headers: { "Content-Type": "application/json", ...corsHeaders },
     });
   } catch (error: any) {
     console.error("[SEND-EMAIL] Error:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }
 };

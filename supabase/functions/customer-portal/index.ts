@@ -1,3 +1,5 @@
+// Customer Portal - Creates Stripe billing portal session for subscription management
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
@@ -12,6 +14,7 @@ serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -19,6 +22,7 @@ serve(async (req) => {
   try {
     logStep("Function started");
 
+    // Verify Stripe is configured
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) throw new Error("STRIPE_SECRET_KEY is not set");
     logStep("Stripe key verified");
@@ -29,6 +33,7 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     );
 
+    // Authenticate user via JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) throw new Error("No authorization header provided");
     logStep("Authorization header found");
@@ -38,9 +43,9 @@ serve(async (req) => {
     if (userError) throw new Error(`Authentication error: ${userError.message}`);
     const user = userData.user;
     if (!user?.email) throw new Error("User not authenticated or email not available");
-    // SECURITY: Don't log email addresses - only log truncated user ID
     logStep("User authenticated", { userId: user.id.substring(0, 8) + '...' });
 
+    // Find Stripe customer
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
     if (customers.data.length === 0) {
@@ -49,19 +54,19 @@ serve(async (req) => {
     const customerId = customers.data[0].id;
     logStep("Found Stripe customer", { customerId });
 
+    // Create portal session
     const returnUrl = getReturnUrl(req.headers.get("origin"), '/subscription');
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: customerId,
       return_url: returnUrl,
     });
-    logStep("Customer portal session created", { sessionId: portalSession.id, url: portalSession.url });
+    logStep("Customer portal session created", { sessionId: portalSession.id });
 
     return new Response(JSON.stringify({ url: portalSession.url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
   } catch (error) {
-    // SECURITY: Log full error server-side but return safe message to client
     const errorMessage = error instanceof Error ? error.message : String(error);
     logStep("ERROR in customer-portal", { message: errorMessage });
     

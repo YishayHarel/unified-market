@@ -1,7 +1,4 @@
-/**
- * Shared rate limiting utility for edge functions
- * In-memory rate limiting with support for different tiers
- */
+// Shared rate limiting utility for edge functions
 
 interface RateLimitEntry {
   count: number;
@@ -11,10 +8,11 @@ interface RateLimitEntry {
 // Global rate limit storage (shared across requests within same instance)
 const rateLimits = new Map<string, RateLimitEntry>();
 
-// Cleanup old entries periodically
+// Cleanup tracking
 let lastCleanup = Date.now();
-const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
+// Removes expired entries periodically to prevent memory bloat
 function cleanupExpiredEntries(): void {
   const now = Date.now();
   if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
@@ -41,25 +39,14 @@ export interface RateLimitResult {
 
 // Preset configurations for different use cases
 export const RATE_LIMIT_TIERS = {
-  // For authenticated users - more generous
   authenticated: { maxRequests: 100, windowMs: 60 * 1000 },
-  
-  // For anonymous/public endpoints - more restrictive  
   anonymous: { maxRequests: 30, windowMs: 60 * 1000 },
-  
-  // For AI/expensive operations - very restrictive
   ai: { maxRequests: 10, windowMs: 60 * 1000 },
-  
-  // For data fetching (stocks, news)
   data: { maxRequests: 60, windowMs: 60 * 1000 },
-  
-  // For auth operations (login, signup)
   auth: { maxRequests: 5, windowMs: 15 * 60 * 1000 },
 } as const;
 
-/**
- * Check rate limit for an identifier
- */
+// Checks rate limit for identifier, returns allowed status and remaining
 export function checkRateLimit(
   identifier: string,
   config: RateLimitConfig = RATE_LIMIT_TIERS.authenticated
@@ -69,17 +56,10 @@ export function checkRateLimit(
   const now = Date.now();
   const entry = rateLimits.get(identifier);
   
-  // No existing entry or expired - create new window
+  // No entry or expired - create new window
   if (!entry || now > entry.resetTime) {
-    rateLimits.set(identifier, {
-      count: 1,
-      resetTime: now + config.windowMs
-    });
-    return {
-      allowed: true,
-      remaining: config.maxRequests - 1,
-      resetTime: now + config.windowMs
-    };
+    rateLimits.set(identifier, { count: 1, resetTime: now + config.windowMs });
+    return { allowed: true, remaining: config.maxRequests - 1, resetTime: now + config.windowMs };
   }
   
   // Check if limit exceeded
@@ -92,50 +72,35 @@ export function checkRateLimit(
     };
   }
   
-  // Increment counter
+  // Increment and return
   entry.count++;
   rateLimits.set(identifier, entry);
-  
-  return {
-    allowed: true,
-    remaining: config.maxRequests - entry.count,
-    resetTime: entry.resetTime
-  };
+  return { allowed: true, remaining: config.maxRequests - entry.count, resetTime: entry.resetTime };
 }
 
-/**
- * Get client identifier from request
- * Uses X-Forwarded-For header or falls back to connection info
- */
+// Gets client identifier from request headers
 export function getClientIdentifier(req: Request): string {
   // Try X-Forwarded-For first (most reliable for proxied requests)
   const forwardedFor = req.headers.get('x-forwarded-for');
   if (forwardedFor) {
-    // Take the first IP in the chain (original client)
     return forwardedFor.split(',')[0].trim();
   }
   
   // Try X-Real-IP
   const realIp = req.headers.get('x-real-ip');
-  if (realIp) {
-    return realIp;
-  }
+  if (realIp) return realIp;
   
-  // Fall back to CF-Connecting-IP (Cloudflare)
+  // Try CF-Connecting-IP (Cloudflare)
   const cfIp = req.headers.get('cf-connecting-ip');
-  if (cfIp) {
-    return cfIp;
-  }
+  if (cfIp) return cfIp;
   
-  // Last resort - use a hash of user agent + origin
+  // Fallback to hash of user agent + origin
   const userAgent = req.headers.get('user-agent') || 'unknown';
   const origin = req.headers.get('origin') || 'unknown';
   return `fallback:${hashString(userAgent + origin)}`;
 }
 
-/**
- * Simple string hash for fallback identification
- */
+// Simple string hash for fallback identification
 function hashString(str: string): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -146,9 +111,7 @@ function hashString(str: string): string {
   return Math.abs(hash).toString(36);
 }
 
-/**
- * Create rate limit response headers
- */
+// Creates rate limit response headers
 export function getRateLimitHeaders(result: RateLimitResult): Record<string, string> {
   return {
     'X-RateLimit-Limit': result.remaining.toString(),
@@ -158,9 +121,7 @@ export function getRateLimitHeaders(result: RateLimitResult): Record<string, str
   };
 }
 
-/**
- * Create a rate limit exceeded response
- */
+// Creates a 429 rate limit exceeded response
 export function createRateLimitResponse(
   result: RateLimitResult,
   corsHeaders: Record<string, string>
@@ -173,11 +134,7 @@ export function createRateLimitResponse(
     }),
     {
       status: 429,
-      headers: {
-        ...corsHeaders,
-        ...getRateLimitHeaders(result),
-        'Content-Type': 'application/json'
-      }
+      headers: { ...corsHeaders, ...getRateLimitHeaders(result), 'Content-Type': 'application/json' }
     }
   );
 }

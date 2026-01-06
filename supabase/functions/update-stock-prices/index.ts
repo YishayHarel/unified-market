@@ -1,6 +1,8 @@
+// Update Stock Prices - Cron job to update daily returns for top 100 stocks
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// CORS configuration - restrict to allowed origins
+// Allowed origins for CORS
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
@@ -8,6 +10,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173'
 ];
 
+// Returns CORS headers based on origin
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
     ? origin 
@@ -19,14 +22,11 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
-/**
- * Updates stock prices and calculates daily returns for top 100 stocks
- * This function is designed to be called by a cron job every 4 hours
- */
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
       throw new Error('FINNHUB_API_KEY not configured');
     }
 
-    // Fetch top 100 stocks
+    // Get top 100 stocks
     const { data: stocks, error: fetchError } = await supabaseClient
       .from('stocks')
       .select('id, symbol')
@@ -55,6 +55,7 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to fetch stocks: ${fetchError.message}`);
     }
 
+    // Fallback to all stocks if no top 100 found
     if (!stocks || stocks.length === 0) {
       console.log('No top 100 stocks found, fetching all stocks instead');
       const { data: allStocks, error: allError } = await supabaseClient
@@ -73,13 +74,13 @@ Deno.serve(async (req) => {
 
     let updatedCount = 0;
     let errorCount = 0;
-    const batchSize = 5; // Process 5 at a time to respect rate limits
-    const delayBetweenBatches = 6000; // 6 seconds between batches (60 calls/min limit)
+    const batchSize = 5;
+    const delayBetweenBatches = 6000;
 
+    // Process in batches to respect rate limits
     for (let i = 0; i < stocks.length; i += batchSize) {
       const batch = stocks.slice(i, i + batchSize);
       
-      // Process batch in parallel
       const promises = batch.map(async (stock) => {
         try {
           const response = await fetch(
@@ -99,17 +100,13 @@ Deno.serve(async (req) => {
 
           const data = await response.json();
           
-          // c = current price, pc = previous close, dp = percent change
+          // Calculate daily return if we have valid prices
           if (data.c && data.c > 0 && data.pc && data.pc > 0) {
-            // Calculate daily return as decimal (e.g., 0.02 for 2%)
             const dailyReturn = (data.c - data.pc) / data.pc;
             
             const { error: updateError } = await supabaseClient
               .from('stocks')
-              .update({ 
-                last_return_1d: dailyReturn,
-                updated_at: new Date().toISOString()
-              })
+              .update({ last_return_1d: dailyReturn, updated_at: new Date().toISOString() })
               .eq('id', stock.id);
 
             if (updateError) {
@@ -133,7 +130,7 @@ Deno.serve(async (req) => {
       updatedCount += results.filter(r => r.success).length;
       errorCount += results.filter(r => !r.success).length;
 
-      // Wait between batches to respect rate limits
+      // Wait between batches
       if (i + batchSize < stocks.length) {
         console.log(`Processed ${i + batchSize}/${stocks.length} stocks, waiting ${delayBetweenBatches/1000}s...`);
         await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
@@ -150,22 +147,13 @@ Deno.serve(async (req) => {
         errors: errorCount,
         total: stocks.length
       }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
   } catch (error) {
     console.error('Stock price update error:', error);
     return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      }
+      JSON.stringify({ success: false, error: error.message }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }
 })
