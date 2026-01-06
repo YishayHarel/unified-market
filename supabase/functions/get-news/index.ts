@@ -88,7 +88,15 @@ serve(async (req) => {
       companyName 
     } = requestBody
     
-    console.log(`Fetching news: symbol=${symbol}, companyName=${companyName}, pageSize=${pageSize}`)
+    // SECURITY: Validate and sanitize symbol input to prevent injection
+    const sanitizedSymbol = symbol 
+      ? String(symbol).replace(/[^A-Za-z0-9.]/g, '').toUpperCase().slice(0, 10)
+      : undefined;
+    
+    // SECURITY: Validate pageSize is reasonable
+    const validPageSize = Math.min(Math.max(1, Number(pageSize) || 20), 50);
+    
+    console.log(`Fetching news: symbol=${sanitizedSymbol}, pageSize=${validPageSize}`)
     
     const finnhubKey = Deno.env.get('FINNHUB_API_KEY')
     if (!finnhubKey) {
@@ -98,15 +106,16 @@ serve(async (req) => {
 
     let url: string;
     
-    if (symbol) {
-      // Stock-specific news
+    if (sanitizedSymbol) {
+      // Stock-specific news - use sanitized symbol
       const today = new Date();
       const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
       const fromDate = weekAgo.toISOString().split('T')[0];
       const toDate = today.toISOString().split('T')[0];
       
-      url = `https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${fromDate}&to=${toDate}&token=${finnhubKey}`;
-      console.log(`Fetching company news for ${symbol}`);
+      // SECURITY: Using sanitized symbol prevents injection
+      url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(sanitizedSymbol)}&from=${fromDate}&to=${toDate}&token=${finnhubKey}`;
+      console.log(`Fetching company news for ${sanitizedSymbol}`);
     } else {
       // General market news
       url = `https://finnhub.io/api/v1/news?category=general&token=${finnhubKey}`;
@@ -137,7 +146,7 @@ serve(async (req) => {
     // Transform Finnhub format to match our frontend expected format
     const articles = (Array.isArray(data) ? data : [])
       .filter((article: any) => article.headline && article.url)
-      .slice(0, pageSize)
+      .slice(0, validPageSize)
       .map((article: any) => ({
         title: article.headline,
         description: article.summary || article.headline,
