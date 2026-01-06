@@ -67,7 +67,6 @@ function safeErrorResponse(error: unknown, corsHeaders: Record<string, string>):
   });
 }
 
-// Main request handler
 serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
@@ -86,7 +85,7 @@ serve(async (req) => {
   try {
     logStep("Function started");
 
-    // Verify Stripe config
+    // Verify Stripe is configured
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) {
       console.error('[CHECK-SUBSCRIPTION] STRIPE_SECRET_KEY not configured');
@@ -94,11 +93,12 @@ serve(async (req) => {
     }
     logStep("Stripe key verified");
 
-    // Authenticate user via JWT
+    // Get and validate auth token
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) throw new Error("No authorization header provided");
     logStep("Authorization header found");
 
+    // Authenticate user via JWT
     const token = authHeader.replace("Bearer ", "");
     logStep("Authenticating user");
     
@@ -109,10 +109,11 @@ serve(async (req) => {
     if (!user?.email) throw new Error("User not authenticated or email not available");
     logStep("User authenticated", { userId: user.id });
 
-    // Look up user in Stripe
+    // Look up customer in Stripe by email
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
     
+    // No customer found = not subscribed
     if (customers.data.length === 0) {
       logStep("No customer found, returning unsubscribed state");
       return new Response(JSON.stringify({ subscribed: false }), {
@@ -140,7 +141,7 @@ serve(async (req) => {
       const subscription = subscriptions.data[0];
       const rawProductId = subscription.items.data[0].price.product as string;
       
-      // Validate product ID
+      // Validate product ID is one we recognize
       if (!VALID_PRODUCT_IDS.includes(rawProductId)) {
         console.error('[CHECK-SUBSCRIPTION] Invalid product ID from Stripe:', rawProductId);
         return new Response(JSON.stringify({ subscribed: false }), {
@@ -149,7 +150,7 @@ serve(async (req) => {
         });
       }
       
-      // Verify subscription hasn't expired
+      // Check subscription hasn't expired
       const endTimestamp = subscription.current_period_end * 1000;
       if (endTimestamp < Date.now()) {
         logStep("Subscription period has expired");
