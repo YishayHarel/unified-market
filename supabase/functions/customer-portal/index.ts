@@ -38,7 +38,8 @@ serve(async (req) => {
     if (userError) throw new Error(`Authentication error: ${userError.message}`);
     const user = userData.user;
     if (!user?.email) throw new Error("User not authenticated or email not available");
-    logStep("User authenticated", { userId: user.id, email: user.email });
+    // SECURITY: Don't log email addresses - only log truncated user ID
+    logStep("User authenticated", { userId: user.id.substring(0, 8) + '...' });
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
@@ -60,11 +61,18 @@ serve(async (req) => {
       status: 200,
     });
   } catch (error) {
+    // SECURITY: Log full error server-side but return safe message to client
     const errorMessage = error instanceof Error ? error.message : String(error);
     logStep("ERROR in customer-portal", { message: errorMessage });
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    
+    // Only expose safe operational errors to client
+    const isOperationalError = errorMessage.includes('No Stripe customer') || 
+                               errorMessage.includes('not authenticated');
+    const clientMessage = isOperationalError ? errorMessage : 'An error occurred accessing the customer portal';
+    
+    return new Response(JSON.stringify({ error: clientMessage }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
+      status: isOperationalError ? 400 : 500,
     });
   }
 });

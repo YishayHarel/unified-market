@@ -197,10 +197,11 @@ Format your response as JSON with the following structure:
     });
 
   } catch (error) {
+    // SECURITY: Log full error server-side but return safe message to client
     console.error('Error in AI portfolio optimizer:', error);
     return new Response(JSON.stringify({ 
-      error: 'Failed to optimize portfolio', 
-      details: error.message 
+      error: 'An error occurred optimizing your portfolio'
+      // SECURITY: Never expose error.message to client - could leak internal details
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

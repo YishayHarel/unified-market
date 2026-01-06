@@ -21,6 +21,28 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
+// Rate limiting
+interface RateLimit {
+  count: number;
+  resetTime: number;
+}
+const rateLimits = new Map<string, RateLimit>();
+const MAX_REQUESTS_PER_MINUTE = 10; // AI calls are expensive
+
+function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
+  const now = Date.now();
+  const limit = rateLimits.get(identifier);
+  if (!limit || now > limit.resetTime) {
+    rateLimits.set(identifier, { count: 1, resetTime: now + 60000 });
+    return { allowed: true, remaining: MAX_REQUESTS_PER_MINUTE - 1 };
+  }
+  if (limit.count >= MAX_REQUESTS_PER_MINUTE) {
+    return { allowed: false, remaining: 0 };
+  }
+  limit.count++;
+  return { allowed: true, remaining: MAX_REQUESTS_PER_MINUTE - limit.count };
+}
+
 serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
@@ -30,30 +52,53 @@ serve(async (req) => {
   }
 
   try {
-    const { userId } = await req.json();
-    
-    if (!userId) {
+    // SECURITY: Authenticate user from JWT token instead of trusting request body
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
       return new Response(
-        JSON.stringify({ error: 'User ID is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Authentication required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    console.log(`[AI Risk Assessment] Processing for user: ${userId}`);
 
     // Get Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch user's portfolio
+    // SECURITY: Get authenticated user ID from token, not from request body
+    const token = authHeader.replace('Bearer ', '');
+    const { data: userData, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !userData.user) {
+      console.error('[AI Risk Assessment] Auth error:', authError?.message);
+      return new Response(
+        JSON.stringify({ error: 'Invalid authentication' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const userId = userData.user.id;
+    
+    // Rate limiting by user ID
+    const rateCheck = checkRateLimit(userId);
+    if (!rateCheck.allowed) {
+      return new Response(
+        JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' } }
+      );
+    }
+
+    console.log(`[AI Risk Assessment] Processing for authenticated user: ${userId.substring(0, 8)}...`);
+
+    // Fetch user's portfolio - now using verified userId
     const { data: holdings, error: holdingsError } = await supabase
       .from('portfolio_holdings')
       .select('*')
       .eq('user_id', userId);
 
     if (holdingsError) {
-      console.error('[AI Risk Assessment] Error fetching holdings:', holdingsError);
+      console.error('[AI Risk Assessment] Error fetching holdings:', holdingsError.message);
       return new Response(
         JSON.stringify({ error: 'Failed to fetch portfolio' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -221,9 +266,10 @@ Provide a comprehensive risk assessment.`;
     );
 
   } catch (error) {
+    // SECURITY: Log full error server-side but return safe message to client
     console.error('[AI Risk Assessment] Error:', error);
     return new Response(
-      JSON.stringify({ error: error.message || 'Internal server error' }),
+      JSON.stringify({ error: 'An error occurred processing your request' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
