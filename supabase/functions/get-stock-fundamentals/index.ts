@@ -1,6 +1,8 @@
+// Get Stock Fundamentals - Fetches company financials from Finnhub API
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-// CORS configuration - restrict to allowed origins
+// Allowed origins for CORS
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
@@ -8,6 +10,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173'
 ];
 
+// Returns CORS headers based on origin
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
     ? origin 
@@ -23,7 +26,7 @@ serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
-  // Handle CORS preflight requests
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -31,6 +34,7 @@ serve(async (req) => {
   try {
     console.log('Get-stock-fundamentals function called')
     
+    // Parse request body
     let requestBody;
     try {
       requestBody = await req.json()
@@ -46,13 +50,14 @@ serve(async (req) => {
     
     console.log(`Fetching fundamentals for symbol: ${symbol}`)
     
+    // Get API key
     const finnhubKey = Deno.env.get('FINNHUB_API_KEY')
     if (!finnhubKey) {
       console.error('FINNHUB_API_KEY not found in environment')
       throw new Error('FINNHUB_API_KEY not found')
     }
 
-    // Fetch basic financials, profile, recommendations, price targets, and quote from Finnhub
+    // Fetch all data in parallel
     const [basicFinancialsResponse, profileResponse, recommendationResponse, priceTargetResponse, quoteResponse] = await Promise.all([
       fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${finnhubKey}`),
       fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubKey}`),
@@ -67,6 +72,7 @@ serve(async (req) => {
     let priceTarget = null;
     let quote = null;
 
+    // Process basic financials
     if (basicFinancialsResponse.ok) {
       const basicData = await basicFinancialsResponse.json();
       console.log(`Basic financials for ${symbol}:`, basicData);
@@ -75,6 +81,7 @@ serve(async (req) => {
       console.error(`Error fetching basic financials for ${symbol}: ${basicFinancialsResponse.status}`);
     }
 
+    // Process profile
     if (profileResponse.ok) {
       const profileData = await profileResponse.json();
       console.log(`Profile for ${symbol}:`, profileData);
@@ -83,6 +90,7 @@ serve(async (req) => {
       console.error(`Error fetching profile for ${symbol}: ${profileResponse.status}`);
     }
 
+    // Process recommendations
     if (recommendationResponse.ok) {
       const recommendationData = await recommendationResponse.json();
       console.log(`Recommendations for ${symbol}:`, recommendationData);
@@ -91,6 +99,7 @@ serve(async (req) => {
       console.error(`Error fetching recommendations for ${symbol}: ${recommendationResponse.status}`);
     }
 
+    // Process price target
     if (priceTargetResponse.ok) {
       const priceTargetData = await priceTargetResponse.json();
       console.log(`Price target for ${symbol}:`, priceTargetData);
@@ -99,6 +108,7 @@ serve(async (req) => {
       console.error(`Error fetching price target for ${symbol}: ${priceTargetResponse.status}`);
     }
 
+    // Process quote
     if (quoteResponse.ok) {
       const quoteData = await quoteResponse.json();
       console.log(`Quote for ${symbol}:`, quoteData);
@@ -107,7 +117,7 @@ serve(async (req) => {
       console.error(`Error fetching quote for ${symbol}: ${quoteResponse.status}`);
     }
 
-    // Extract the key metrics we need
+    // Build result with key metrics
     const result = {
       symbol,
       marketCapitalization: (profile as any).marketCapitalization || (fundamentals as any).marketCapitalization || null,
@@ -123,7 +133,6 @@ serve(async (req) => {
       employeeCount: (profile as any).employeeTotal || null,
       sharesOutstanding: (profile as any).shareOutstanding || null,
       bookValue: (fundamentals as any).bookValuePerShareAnnual || null,
-      // Add recommendation trends and price targets
       recommendationTrends,
       priceTarget,
       quote
@@ -133,19 +142,13 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify(result),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      },
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
   } catch (error) {
     console.error('Error in get-stock-fundamentals function:', error.message)
     return new Response(
       JSON.stringify({ error: error.message }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      },
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }
 })

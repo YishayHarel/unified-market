@@ -1,13 +1,10 @@
-/**
- * Shared CORS configuration for all edge functions
- * Supports production domains, preview deployments, and local development
- */
+// Shared CORS configuration for all edge functions
 
-// Known allowed production domains
+// Production domains
 const PRODUCTION_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
-  'https://unified-market.lovable.app', // Custom domain if set
+  'https://unified-market.lovable.app',
 ];
 
 // Local development origins
@@ -20,21 +17,14 @@ const LOCAL_ORIGINS = [
   'http://127.0.0.1:3000',
 ];
 
-/**
- * Check if an origin is allowed
- * Supports:
- * - Production domains
- * - Lovable preview deployments (*.lovableproject.com, *.lovable.app)
- * - Vercel preview deployments (*.vercel.app)
- * - Local development
- */
+// Checks if origin is allowed (production, preview, or local)
 export function isAllowedOrigin(origin: string | null): boolean {
   if (!origin) return false;
   
-  // Check exact matches for production
+  // Check exact production matches
   if (PRODUCTION_ORIGINS.includes(origin)) return true;
   
-  // Check local development (only in non-production scenarios)
+  // Check local development
   if (LOCAL_ORIGINS.includes(origin)) return true;
   
   // Allow Lovable preview deployments
@@ -50,10 +40,7 @@ export function isAllowedOrigin(origin: string | null): boolean {
   return false;
 }
 
-/**
- * Get CORS headers for a request
- * Returns appropriate headers based on origin validation
- */
+// Returns CORS headers for the request
 export function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = isAllowedOrigin(origin) ? origin : PRODUCTION_ORIGINS[0];
   
@@ -61,13 +48,11 @@ export function getCorsHeaders(origin: string | null): Record<string, string> {
     'Access-Control-Allow-Origin': allowedOrigin!,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Max-Age': '86400', // Cache preflight for 24 hours
+    'Access-Control-Max-Age': '86400',
   };
 }
 
-/**
- * Handle CORS preflight request
- */
+// Handles CORS preflight request
 export function handleCorsPreflightRequest(origin: string | null): Response {
   return new Response(null, { 
     status: 204,
@@ -75,10 +60,7 @@ export function handleCorsPreflightRequest(origin: string | null): Response {
   });
 }
 
-/**
- * Get the return URL for redirects (Stripe, etc.)
- * Validates origin and provides safe fallback
- */
+// Gets safe return URL for redirects (Stripe, etc.)
 export function getReturnUrl(origin: string | null, path: string = '/'): string {
   if (origin && isAllowedOrigin(origin)) {
     return `${origin}${path}`;

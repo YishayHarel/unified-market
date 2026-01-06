@@ -1,3 +1,5 @@
+// Rate Limiter - Simple in-memory rate limiting service
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 
 interface RateLimit {
@@ -7,7 +9,7 @@ interface RateLimit {
 
 const rateLimits = new Map<string, RateLimit>();
 
-// CORS configuration - restrict to allowed origins
+// Allowed origins for CORS
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
@@ -15,6 +17,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173'
 ];
 
+// Returns CORS headers based on origin
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
     ? origin 
@@ -26,48 +29,30 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
-/**
- * Simple in-memory rate limiter
- * In production, you'd want to use Redis or a distributed solution
- */
+// Checks rate limit for identifier, creates new window if expired
 export function checkRateLimit(
   identifier: string,
   maxRequests: number = 100,
-  windowMs: number = 60 * 1000 // 1 minute
+  windowMs: number = 60 * 1000
 ): { allowed: boolean; resetTime: number; remaining: number } {
   const now = Date.now();
   const limit = rateLimits.get(identifier);
 
+  // Create new window if none exists or expired
   if (!limit || now > limit.resetTime) {
-    // Create new rate limit window
-    rateLimits.set(identifier, {
-      count: 1,
-      resetTime: now + windowMs
-    });
-    return {
-      allowed: true,
-      resetTime: now + windowMs,
-      remaining: maxRequests - 1
-    };
+    rateLimits.set(identifier, { count: 1, resetTime: now + windowMs });
+    return { allowed: true, resetTime: now + windowMs, remaining: maxRequests - 1 };
   }
 
+  // Check if limit exceeded
   if (limit.count >= maxRequests) {
-    return {
-      allowed: false,
-      resetTime: limit.resetTime,
-      remaining: 0
-    };
+    return { allowed: false, resetTime: limit.resetTime, remaining: 0 };
   }
 
-  // Increment count
+  // Increment and return
   limit.count++;
   rateLimits.set(identifier, limit);
-
-  return {
-    allowed: true,
-    resetTime: limit.resetTime,
-    remaining: maxRequests - limit.count
-  };
+  return { allowed: true, resetTime: limit.resetTime, remaining: maxRequests - limit.count };
 }
 
 serve(async (req) => {
