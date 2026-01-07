@@ -1,26 +1,7 @@
 // Get News - Fetches financial news from Finnhub with rate limiting
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-
-// Allowed origins for CORS
-const ALLOWED_ORIGINS = [
-  'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
-  'https://lovable.dev',
-  'http://localhost:8080',
-  'http://localhost:5173'
-];
-
-// Returns CORS headers based on origin
-function getCorsHeaders(origin: string | null): Record<string, string> {
-  const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
-    ? origin 
-    : ALLOWED_ORIGINS[0];
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  };
-}
+import { getCorsHeaders } from "../_shared/cors.ts"
 
 // Rate limiting
 interface RateLimit {
@@ -163,9 +144,25 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'max-age=120' }, status: 200 }
     )
   } catch (error) {
-    console.error('Error in get-news function:', error.message)
+    console.error('Error in get-news function:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    
+    // Provide user-friendly error messages
+    let userMessage = 'Unable to fetch news at this time';
+    if (errorMessage.includes('FINNHUB_API_KEY')) {
+      userMessage = 'News service configuration error';
+    } else if (errorMessage.includes('timeout') || errorMessage.includes('aborted')) {
+      userMessage = 'Request timed out. Please try again.';
+    } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+      userMessage = 'Too many requests. Please try again later.';
+    }
+    
     return new Response(
-      JSON.stringify({ error: error.message, articles: [] }),
+      JSON.stringify({ 
+        error: userMessage, 
+        articles: [],
+        details: errorMessage // Include details for debugging (only in logs)
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }

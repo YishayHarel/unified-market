@@ -5,6 +5,7 @@ const PRODUCTION_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
   'https://unified-market.lovable.app',
+  'https://unified-market.vercel.app',
 ];
 
 // Local development origins
