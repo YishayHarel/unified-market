@@ -36,13 +36,36 @@ const NewsSection = () => {
       
       const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase function error:', error);
+        // Log detailed error for debugging
+        if (error.message) console.error('Error message:', error.message);
+        if (error.status) console.error('Error status:', error.status);
+        throw error;
+      }
+      
+      // Check if we got an error in the response data
+      if (data?.error) {
+        console.error('Function returned error:', data.error);
+        throw new Error(data.error);
+      }
       
       if (data?.articles) {
         setNews(data.articles);
+      } else {
+        console.warn('No articles in response:', data);
+        setNews([]);
       }
     } catch (error) {
       console.error('Error fetching news:', error);
+      // Log the full error for debugging
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          name: error.name,
+          stack: error.stack
+        });
+      }
       // Don't show fake data - leave empty to show error state
       setNews([]);
     } finally {
