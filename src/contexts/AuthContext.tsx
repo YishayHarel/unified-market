@@ -233,13 +233,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session]);
 
-  // Periodic subscription check (every minute)
+  // Periodic subscription check (every 5 minutes - optimized from 1 minute)
   useEffect(() => {
     if (!session) return;
     
     const interval = setInterval(() => {
       checkSubscription();
-    }, 60000);
+    }, 5 * 60 * 1000); // 5 minutes instead of 1 minute
 
     return () => clearInterval(interval);
   }, [session]);
