@@ -50,6 +50,8 @@ const DividendTracker = () => {
   useEffect(() => {
     if (user) {
       fetchDividends();
+    } else {
+      setLoading(false);
     }
   }, [user]);
 
@@ -203,6 +205,22 @@ const DividendTracker = () => {
         <CardContent>
           <div className="flex items-center justify-center p-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>💰 Dividend Tracker</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8 text-muted-foreground">
+            <p className="text-lg mb-2">Sign in to track dividends</p>
+            <p className="text-sm">Create an account to start tracking your dividend income</p>
           </div>
         </CardContent>
       </Card>
