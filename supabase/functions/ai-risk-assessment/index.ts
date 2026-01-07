@@ -133,11 +133,11 @@ serve(async (req) => {
       weight: (h.value / totalValue * 100).toFixed(2) + '%'
     }));
 
-    // Use Lovable AI Gateway
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    // Use OpenAI API
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
     
-    if (!LOVABLE_API_KEY) {
-      console.error('[AI Risk Assessment] LOVABLE_API_KEY not configured');
+    if (!OPENAI_API_KEY) {
+      console.error('[AI Risk Assessment] OPENAI_API_KEY not configured');
       return new Response(
         JSON.stringify({ error: 'AI service not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -187,37 +187,33 @@ ${JSON.stringify(portfolioWithWeights, null, 2)}
 
 Provide a comprehensive risk assessment.`;
 
-    console.log('[AI Risk Assessment] Calling Lovable AI Gateway...');
+    console.log('[AI Risk Assessment] Calling OpenAI API...');
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
+        max_tokens: 2000,
+        temperature: 0.3,
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[AI Risk Assessment] AI Gateway error:', response.status, errorText);
+      console.error('[AI Risk Assessment] OpenAI API error:', response.status, errorText);
       
       if (response.status === 429) {
         return new Response(
           JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: 'AI credits exhausted. Please add funds.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
       
