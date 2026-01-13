@@ -1,7 +1,39 @@
 // Get News - Fetches financial news from Finnhub with rate limiting
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { getCorsHeaders } from "../_shared/cors.ts"
+
+// CORS configuration - inlined version (standalone for Supabase deployment)
+const PRODUCTION_ORIGINS = [
+  'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
+  'https://lovable.dev',
+  'https://unified-market.lovable.app',
+  'https://unified-market.vercel.app',
+];
+
+const LOCAL_ORIGINS = [
+  'http://localhost:8080',
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
+
+function isAllowedOrigin(origin: string | null): boolean {
+  if (!origin) return false;
+  if (PRODUCTION_ORIGINS.includes(origin)) return true;
+  if (LOCAL_ORIGINS.includes(origin)) return true;
+  if (origin.endsWith('.lovableproject.com') || origin.endsWith('.lovable.app')) return true;
+  if (origin.endsWith('.vercel.app')) return true;
+  return false;
+}
+
+function getCorsHeaders(origin: string | null): Record<string, string> {
+  const allowedOrigin = isAllowedOrigin(origin) ? origin : PRODUCTION_ORIGINS[0];
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin!,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+  };
+}
 
 // Rate limiting
 interface RateLimit {
@@ -12,7 +44,6 @@ const rateLimits = new Map<string, RateLimit>();
 const MAX_REQUESTS_PER_MINUTE = 20;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
-// Checks rate limit for identifier
 function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
   const now = Date.now();
   const limit = rateLimits.get(identifier);
@@ -35,13 +66,11 @@ serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
-    // Rate limit by IP
     const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
                      req.headers.get('cf-connecting-ip') || 'unknown';
     
@@ -56,7 +85,6 @@ serve(async (req) => {
 
     console.log(`Get-news called (IP: ${clientIP}, remaining: ${rateCheck.remaining})`)
 
-    // Parse request body
     let requestBody;
     try {
       requestBody = await req.json()
@@ -67,7 +95,6 @@ serve(async (req) => {
     
     const { pageSize = 20, symbol, companyName } = requestBody
     
-    // Sanitize inputs
     const sanitizedSymbol = symbol 
       ? String(symbol).replace(/[^A-Za-z0-9.]/g, '').toUpperCase().slice(0, 10)
       : undefined;
@@ -81,7 +108,6 @@ serve(async (req) => {
       throw new Error('FINNHUB_API_KEY not found')
     }
 
-    // Build URL based on whether we have a symbol
     let url: string;
     if (sanitizedSymbol) {
       const today = new Date();
@@ -95,7 +121,6 @@ serve(async (req) => {
       console.log('Fetching general market news');
     }
     
-    // Fetch with timeout
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 8000)
     
@@ -115,7 +140,6 @@ serve(async (req) => {
     const data = await response.json()
     console.log(`Finnhub returned ${Array.isArray(data) ? data.length : 0} articles`)
     
-    // Transform to frontend format
     const articles = (Array.isArray(data) ? data : [])
       .filter((article: any) => article.headline && article.url)
       .slice(0, validPageSize)
@@ -128,7 +152,6 @@ serve(async (req) => {
         urlToImage: article.image || null
       }));
     
-    // Deduplicate by similar titles
     const seenTitles = new Set<string>();
     const deduplicatedArticles = articles.filter((article: any) => {
       const normalizedTitle = article.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim().slice(0, 50);
@@ -147,7 +170,6 @@ serve(async (req) => {
     console.error('Error in get-news function:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     
-    // Provide user-friendly error messages
     let userMessage = 'Unable to fetch news at this time';
     if (errorMessage.includes('FINNHUB_API_KEY')) {
       userMessage = 'News service configuration error';
@@ -161,7 +183,7 @@ serve(async (req) => {
       JSON.stringify({ 
         error: userMessage, 
         articles: [],
-        details: errorMessage // Include details for debugging (only in logs)
+        details: errorMessage
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
