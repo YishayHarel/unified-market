@@ -14,7 +14,7 @@ const BottomNavigation = () => {
   const location = useLocation();
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border z-50">
+    <div className="fixed bottom-0 left-0 right-0 bg-white/95 border-t border-border z-50 shadow-elegant backdrop-blur-sm">
       <div className="overflow-x-auto scrollbar-hide">
         <div className="flex items-center justify-center py-2 px-4">
           <div className="flex items-center gap-1">

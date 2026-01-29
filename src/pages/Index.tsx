@@ -32,13 +32,13 @@ const Index = () => {
             </div>
             
             <div className="space-y-4">
-              <div className="flex items-center justify-center gap-4">
+              <div className="flex flex-col items-center justify-center gap-4">
                 <img 
                   src={bullLogo} 
                   alt="UnifiedMarket Bull Logo" 
                   className="w-32 h-32 object-contain"
                 />
-                <h1 className="text-5xl md:text-6xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+                <h1 className="text-5xl md:text-6xl font-bold bg-gradient-primary bg-clip-text text-transparent text-center">
                   UnifiedMarket
                 </h1>
               </div>
