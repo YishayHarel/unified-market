@@ -6,9 +6,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
+  'https://unified-market.vercel.app',
   'http://localhost:8080',
   'http://localhost:5173'
 ];
+
+const AI_DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '20');
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
@@ -30,7 +33,46 @@ serve(async (req) => {
   }
 
   try {
-    const { query, userId } = await req.json();
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Authentication required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: userData, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !userData.user) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid authentication' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { data: usageAllowed, error: usageError } = await supabase.rpc('check_ai_usage', {
+      p_user_id: userData.user.id,
+      p_daily_limit: AI_DAILY_LIMIT
+    });
+    if (usageError) {
+      console.error('[AI Screener] Usage check error:', usageError);
+      return new Response(
+        JSON.stringify({ error: 'Usage check failed' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (!usageAllowed) {
+      return new Response(
+        JSON.stringify({ error: 'Daily AI limit reached. Please try again tomorrow.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { query } = await req.json();
     
     if (!query) {
       return new Response(
@@ -40,11 +82,6 @@ serve(async (req) => {
     }
 
     console.log(`[AI Screener] Processing query: "${query}"`);
-
-    // Get Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Fetch available stocks data for context
     const { data: stocks, error: stocksError } = await supabase

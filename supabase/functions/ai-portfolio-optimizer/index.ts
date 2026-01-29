@@ -6,9 +6,12 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
+  'https://unified-market.vercel.app',
   'http://localhost:8080',
   'http://localhost:5173'
 ];
+
+const AI_DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '20');
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
@@ -41,6 +44,24 @@ serve(async (req) => {
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { data: usageAllowed, error: usageError } = await supabaseClient.rpc('check_ai_usage', {
+      p_user_id: user.id,
+      p_daily_limit: AI_DAILY_LIMIT
+    });
+    if (usageError) {
+      console.error('[AI Portfolio Optimizer] Usage check error:', usageError);
+      return new Response(JSON.stringify({ error: 'Usage check failed' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!usageAllowed) {
+      return new Response(JSON.stringify({ error: 'Daily AI limit reached. Please try again tomorrow.' }), {
+        status: 429,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

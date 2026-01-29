@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
+  'https://unified-market.vercel.app',
   'http://localhost:8080',
   'http://localhost:5173'
 ];
@@ -28,6 +29,7 @@ interface RateLimit {
 }
 const rateLimits = new Map<string, RateLimit>();
 const MAX_REQUESTS_PER_MINUTE = 5; // AI daily brief is expensive
+const AI_DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '20');
 
 function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
   const now = Date.now();
@@ -86,6 +88,24 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' } }
+      );
+    }
+
+    const { data: usageAllowed, error: usageError } = await supabase.rpc('check_ai_usage', {
+      p_user_id: userId,
+      p_daily_limit: AI_DAILY_LIMIT
+    });
+    if (usageError) {
+      console.error('[AI Daily Brief] Usage check error:', usageError);
+      return new Response(
+        JSON.stringify({ error: 'Usage check failed' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (!usageAllowed) {
+      return new Response(
+        JSON.stringify({ error: 'Daily AI limit reached. Please try again tomorrow.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

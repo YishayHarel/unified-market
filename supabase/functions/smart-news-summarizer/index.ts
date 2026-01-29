@@ -1,13 +1,17 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 // CORS configuration - restrict to allowed origins
 const ALLOWED_ORIGINS = [
   'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
   'https://lovable.dev',
+  'https://unified-market.vercel.app',
   'http://localhost:8080',
   'http://localhost:5173'
 ];
+
+const AI_NEWS_SUMMARY_DAILY_LIMIT = Number(Deno.env.get('AI_NEWS_SUMMARY_DAILY_LIMIT') ?? '5');
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
@@ -29,6 +33,45 @@ serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Authentication required' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: userData, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !userData.user) {
+      return new Response(JSON.stringify({ error: 'Invalid authentication' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { data: usageAllowed, error: usageError } = await supabase.rpc('check_ai_usage', {
+      p_user_id: userData.user.id,
+      p_daily_limit: AI_NEWS_SUMMARY_DAILY_LIMIT
+    });
+    if (usageError) {
+      console.error('[Smart News Summarizer] Usage check error:', usageError);
+      return new Response(JSON.stringify({ error: 'Usage check failed' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!usageAllowed) {
+      return new Response(JSON.stringify({ error: 'Daily AI limit reached. Please try again tomorrow.' }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const { articles } = await req.json();
 
     if (!articles || articles.length === 0) {
