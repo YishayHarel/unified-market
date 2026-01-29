@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+log_file="$repo_root/.git-commands.log"
+
+ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+cwd="$(pwd)"
+
+printf '%s\t%s\t' "$ts" "$cwd" >> "$log_file"
+printf '%q ' git "$@" >> "$log_file"
+printf '\n' >> "$log_file"
+
+exec git "$@"
