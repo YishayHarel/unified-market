@@ -297,21 +297,7 @@ const StockDetail = () => {
     return companies[symbol.toUpperCase()] || `${symbol.toUpperCase()} Inc.`;
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background text-foreground p-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="animate-pulse space-y-6">
-            <div className="h-8 bg-card rounded w-48"></div>
-            <div className="h-32 bg-card rounded"></div>
-            <div className="h-64 bg-card rounded"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!stockData) {
+  if (!symbol) {
     return (
       <div className="min-h-screen bg-background text-foreground p-4">
         <div className="max-w-4xl mx-auto text-center">
@@ -325,7 +311,13 @@ const StockDetail = () => {
     );
   }
 
-  const isPositive = stockData.change >= 0;
+  const isLoading = loading || !stockData;
+  const displaySymbol = symbol.toUpperCase();
+  const displayName = stockData?.name || "Loading...";
+  const displayPrice = stockData?.price ?? 0;
+  const displayChange = stockData?.change ?? 0;
+  const displayChangePercent = stockData?.changePercent ?? 0;
+  const isPositive = displayChange >= 0;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -344,11 +336,11 @@ const StockDetail = () => {
             
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-card flex items-center justify-center">
-                <span className="text-lg font-bold">{stockData.symbol.charAt(0)}</span>
+                <span className="text-lg font-bold">{displaySymbol.charAt(0)}</span>
               </div>
               <div>
-                <h1 className="text-xl font-bold">{stockData.symbol}</h1>
-                <p className="text-sm text-muted-foreground">{stockData.name}</p>
+                <h1 className="text-xl font-bold">{displaySymbol}</h1>
+                <p className="text-sm text-muted-foreground">{displayName}</p>
               </div>
             </div>
           </div>
@@ -367,11 +359,11 @@ const StockDetail = () => {
               )}
               {isWatched ? 'Watching' : 'Watch'}
             </Button>
-            <Button variant="outline" size="sm" onClick={handleDiscuss}>
+            <Button variant="outline" size="sm" onClick={handleDiscuss} disabled={isLoading}>
               <MessageSquare className="w-4 h-4 mr-2" />
               Discuss
             </Button>
-            <Button size="sm" onClick={handleBuy}>
+            <Button size="sm" onClick={handleBuy} disabled={isLoading}>
               <Plus className="w-4 h-4 mr-2" />
               Buy
             </Button>
@@ -385,20 +377,29 @@ const StockDetail = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <div className="text-3xl font-bold mb-1">
-                  ${stockData.price.toFixed(2)}
-                </div>
-                <div className={`flex items-center gap-2 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                  {isPositive ? (
-                    <TrendingUp className="w-4 h-4" />
-                  ) : (
-                    <TrendingDown className="w-4 h-4" />
-                  )}
-                  <span className="font-medium">
-                    {isPositive ? '+' : ''}{stockData.change.toFixed(2)} ({stockData.changePercent.toFixed(2)}%)
-                  </span>
-                  <span className="text-muted-foreground text-sm">At close · 4:00 PM ET</span>
-                </div>
+                {isLoading ? (
+                  <div className="animate-pulse space-y-2">
+                    <div className="h-8 w-40 bg-card rounded" />
+                    <div className="h-4 w-60 bg-card rounded" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-3xl font-bold mb-1">
+                      ${displayPrice.toFixed(2)}
+                    </div>
+                    <div className={`flex items-center gap-2 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                      {isPositive ? (
+                        <TrendingUp className="w-4 h-4" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4" />
+                      )}
+                      <span className="font-medium">
+                        {isPositive ? '+' : ''}{displayChange.toFixed(2)} ({displayChangePercent.toFixed(2)}%)
+                      </span>
+                      <span className="text-muted-foreground text-sm">At close · 4:00 PM ET</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -420,59 +421,63 @@ const StockDetail = () => {
             {/* Chart */}
             <div className="h-64">
               <StockChart 
-                symbol={stockData.symbol} 
+                symbol={displaySymbol} 
                 period={selectedPeriod}
-                currentPrice={stockData.price}
-                dayChange={stockData.change}
+                currentPrice={displayPrice}
+                dayChange={displayChange}
               />
             </div>
           </CardContent>
         </Card>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="bg-card">
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">Open</div>
-              <div className="font-semibold">${stockData.open.toFixed(2)}</div>
-            </CardContent>
-          </Card>
-          
-          <Card className="bg-card">
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">High</div>
-              <div className="font-semibold">${stockData.high.toFixed(2)}</div>
-            </CardContent>
-          </Card>
-          
-          <Card className="bg-card">
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">Low</div>
-              <div className="font-semibold">${stockData.low.toFixed(2)}</div>
-            </CardContent>
-          </Card>
-          
-          <Card className="bg-card">
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">Volume</div>
-              <div className="font-semibold">{(stockData.volume / 1000000).toFixed(1)}M</div>
-            </CardContent>
-          </Card>
-        </div>
+        {stockData && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="bg-card">
+              <CardContent className="p-4">
+                <div className="text-sm text-muted-foreground">Open</div>
+                <div className="font-semibold">${stockData.open.toFixed(2)}</div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-card">
+              <CardContent className="p-4">
+                <div className="text-sm text-muted-foreground">High</div>
+                <div className="font-semibold">${stockData.high.toFixed(2)}</div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-card">
+              <CardContent className="p-4">
+                <div className="text-sm text-muted-foreground">Low</div>
+                <div className="font-semibold">${stockData.low.toFixed(2)}</div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-card">
+              <CardContent className="p-4">
+                <div className="text-sm text-muted-foreground">Volume</div>
+                <div className="font-semibold">{(stockData.volume / 1000000).toFixed(1)}M</div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Fundamentals & Analyst Ratings */}
-          <div className="lg:col-span-1 space-y-6">
-            <StockFundamentals stockData={stockData} />
-            <AnalystRatings symbol={stockData.symbol} />
-          </div>
+        {stockData && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Column - Fundamentals & Analyst Ratings */}
+            <div className="lg:col-span-1 space-y-6">
+              <StockFundamentals stockData={stockData} />
+              <AnalystRatings symbol={stockData.symbol} />
+            </div>
 
-          {/* Right Column - News */}
-          <div className="lg:col-span-2">
-            <StockNews symbol={stockData.symbol} companyName={stockData.name} />
+            {/* Right Column - News */}
+            <div className="lg:col-span-2">
+              <StockNews symbol={stockData.symbol} companyName={stockData.name} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
