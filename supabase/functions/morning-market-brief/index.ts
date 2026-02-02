@@ -21,6 +21,8 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
+const AI_ENABLED = (Deno.env.get('AI_ENABLED') ?? 'false') === 'true';
+
 // Yahoo Finance futures symbols
 const FUTURES_SYMBOLS = {
   'ES=F': 'S&P 500 Futures',
@@ -225,6 +227,13 @@ serve(async (req) => {
   
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!AI_ENABLED) {
+    return new Response(
+      JSON.stringify({ error: 'AI is coming soon' }),
+      { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 
   try {

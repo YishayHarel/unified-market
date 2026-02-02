@@ -30,6 +30,7 @@ interface RateLimit {
 const rateLimits = new Map<string, RateLimit>();
 const MAX_REQUESTS_PER_MINUTE = 5; // AI daily brief is expensive
 const AI_DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '20');
+const AI_ENABLED = (Deno.env.get('AI_ENABLED') ?? 'false') === 'true';
 
 function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
   const now = Date.now();
@@ -51,6 +52,13 @@ serve(async (req) => {
   
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!AI_ENABLED) {
+    return new Response(
+      JSON.stringify({ error: 'AI is coming soon' }),
+      { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 
   try {

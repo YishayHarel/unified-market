@@ -10,6 +10,7 @@ interface RateLimit {
 
 const rateLimits = new Map<string, RateLimit>();
 const AI_DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '20');
+const AI_ENABLED = (Deno.env.get('AI_ENABLED') ?? 'false') === 'true';
 
 // Checks rate limit for identifier
 function checkRateLimit(
@@ -61,6 +62,13 @@ serve(async (req) => {
   
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!AI_ENABLED) {
+    return new Response(
+      JSON.stringify({ error: 'AI is coming soon' }),
+      { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 
   try {

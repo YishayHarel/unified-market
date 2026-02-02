@@ -12,6 +12,7 @@ const ALLOWED_ORIGINS = [
 ];
 
 const AI_NEWS_SUMMARY_DAILY_LIMIT = Number(Deno.env.get('AI_NEWS_SUMMARY_DAILY_LIMIT') ?? '5');
+const AI_ENABLED = (Deno.env.get('AI_ENABLED') ?? 'false') === 'true';
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
@@ -30,6 +31,13 @@ serve(async (req) => {
   
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!AI_ENABLED) {
+    return new Response(JSON.stringify({ error: 'AI is coming soon' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {
