@@ -37,8 +37,6 @@ function checkRateLimit(
 
 // Allowed origins for CORS
 const ALLOWED_ORIGINS = [
-  'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
-  'https://lovable.dev',
   'https://unified-market.vercel.app',
   'http://localhost:8080',
   'http://localhost:5173'

@@ -95,7 +95,7 @@ dangerouslySetInnerHTML={{
 ### 3. **MEDIUM: CORS Configuration**
 **Location:** `supabase/functions/_shared/cors.ts`
 
-**Issue:** Allows all `.vercel.app` and `.lovable.app` subdomains, which could be too permissive.
+**Issue:** Allows all `.vercel.app` subdomains, which could be too permissive.
 
 **Recommendation:** Consider restricting to specific preview environments or using a whitelist.
 

@@ -5,9 +5,6 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 // CORS configuration - inlined version
 const PRODUCTION_ORIGINS = [
-  'https://85a34aed-b2cd-4a8b-8664-ff1b782adf81.lovableproject.com',
-  'https://lovable.dev',
-  'https://unified-market.lovable.app',
   'https://unified-market.vercel.app',
 ];
 
@@ -21,7 +18,6 @@ function isAllowedOrigin(origin: string | null): boolean {
   if (!origin) return false;
   if (PRODUCTION_ORIGINS.includes(origin)) return true;
   if (LOCAL_ORIGINS.includes(origin)) return true;
-  if (origin.endsWith('.lovableproject.com') || origin.endsWith('.lovable.app')) return true;
   if (origin.endsWith('.vercel.app')) return true;
   return false;
 }
