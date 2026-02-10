@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => ({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'robots.txt'],
+      minify: false,
       manifest: {
         name: 'UnifiedMarket - Stock Tracker',
         short_name: 'UnifiedMarket',
@@ -40,6 +41,7 @@ export default defineConfig(({ mode }) => ({
         ]
       },
       workbox: {
+        mode: 'development',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
