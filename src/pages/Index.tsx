@@ -6,16 +6,18 @@ import TopMovers from "@/components/TopMovers";
 import NewsSection from "@/components/NewsSection";
 import StockSearch from "@/components/StockSearch";
 import HeaderMenu from "@/components/HeaderMenu";
-import HeroBackdrop from "@/components/HeroBackdrop";
 import bullLogo from "@/assets/bull-logo.png";
 
 const Index = () => {
   const { user, signOut } = useAuth();
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Hero Section with Gradient Background */}
-      <div className="bg-background relative overflow-hidden min-h-[320px]">
-        <HeroBackdrop />
+      {/* Hero Section – ChatGPT reference image as background */}
+      <div
+        className="relative overflow-hidden min-h-[380px] bg-cover bg-center"
+        style={{ backgroundImage: "url(/hero-background.png)" }}
+      >
+        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/40 pointer-events-none" aria-hidden />
         <div className="relative z-10 p-6 pb-12 space-y-8">
           <header className="text-center relative max-w-4xl mx-auto">
             <div className="absolute top-0 right-0 flex items-center gap-2">
