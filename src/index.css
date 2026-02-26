@@ -48,15 +48,20 @@
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: "rlig" 1, "calt" 1;
-    /* Left half red, right half green */
+    /* Left half red/orange, right half green; subtle dark grid on top */
     background-image:
+      linear-gradient(90deg, rgba(0,0,0,0.06) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(0,0,0,0.06) 1px, transparent 1px),
       linear-gradient(90deg,
-        hsl(0 75% 50%) 0%,
-        hsl(0 70% 46%) 48%,
-        hsl(140 65% 36%) 52%,
-        hsl(140 75% 48%) 100%),
-      radial-gradient(ellipse 80% 60% at 25% 50%, hsl(0 70% 52% / 0.4), transparent 50%),
-      radial-gradient(ellipse 80% 60% at 75% 50%, hsl(140 70% 45% / 0.4), transparent 50%);
+        hsl(0 75% 48%) 0%,
+        hsl(15 75% 44%) 45%,
+        hsl(8 70% 40%) 49%,
+        hsl(140 60% 34%) 51%,
+        hsl(140 70% 42%) 55%,
+        hsl(140 75% 50%) 100%),
+      radial-gradient(ellipse 80% 60% at 25% 50%, hsl(15 70% 50% / 0.35), transparent 50%),
+      radial-gradient(ellipse 80% 60% at 75% 50%, hsl(140 70% 48% / 0.35), transparent 50%);
+    background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%, 100% 100%;
     background-attachment: fixed;
   }
 
