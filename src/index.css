@@ -48,39 +48,22 @@
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: "rlig" 1, "calt" 1;
-    /* Stronger red (bear) left / green (bull) right split */
+    /* Diagonal split: bottom-left (red) → top-right (green) */
     background-image:
-      linear-gradient(90deg,
+      linear-gradient(135deg,
         hsl(0 75% 52%) 0%,
-        hsl(0 70% 48%) 45%,
-        hsl(0 65% 44%) 49%,
-        hsl(140 65% 38%) 51%,
-        hsl(140 70% 42%) 55%,
+        hsl(0 70% 46%) 35%,
+        hsl(0 65% 42%) 48%,
+        hsl(140 65% 36%) 52%,
+        hsl(140 70% 42%) 65%,
         hsl(140 75% 48%) 100%),
-      /* Chart-like diagonal lines (bear side) */
-      repeating-linear-gradient(105deg,
-        hsl(0 0% 0% / 0.06) 0px,
-        hsl(0 0% 0% / 0.06) 1px,
-        transparent 1px,
-        transparent 20px),
-      repeating-linear-gradient(75deg,
-        hsl(0 0% 100% / 0.04) 0px,
-        hsl(0 0% 100% / 0.04) 1px,
-        transparent 1px,
-        transparent 24px),
-      /* Chart-like diagonal lines (bull side) */
-      repeating-linear-gradient(75deg,
-        hsl(0 0% 0% / 0.05) 0px,
-        hsl(0 0% 0% / 0.05) 1px,
-        transparent 1px,
-        transparent 18px),
-      repeating-linear-gradient(105deg,
-        hsl(0 0% 100% / 0.05) 0px,
-        hsl(0 0% 100% / 0.05) 1px,
+      repeating-linear-gradient(135deg,
+        hsl(0 0% 0% / 0.04) 0px,
+        hsl(0 0% 0% / 0.04) 1px,
         transparent 1px,
         transparent 22px),
-      radial-gradient(ellipse 80% 60% at 15% 30%, hsl(0 70% 55% / 0.5), transparent 50%),
-      radial-gradient(ellipse 80% 60% at 88% 35%, hsl(140 70% 45% / 0.5), transparent 50%);
+      radial-gradient(ellipse 100% 80% at 25% 80%, hsl(0 70% 50% / 0.4), transparent 50%),
+      radial-gradient(ellipse 100% 80% at 75% 20%, hsl(140 70% 45% / 0.4), transparent 50%);
     background-attachment: fixed;
   }
 
