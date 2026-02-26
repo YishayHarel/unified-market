@@ -116,22 +116,26 @@ const TopMovers = ({ compact = false }: TopMoversProps) => {
           return (
             <div
               key={stock.symbol}
-              className={`bg-card/95 backdrop-blur-sm rounded-xl border border-border hover:bg-card transition-colors cursor-pointer shadow-md ${compact ? "p-3 flex flex-col justify-between" : "p-4"}`}
+              className={`backdrop-blur-sm rounded-xl border transition-colors cursor-pointer shadow-md ${compact ? "p-3 flex flex-col justify-between" : "p-4"} ${
+                positive
+                  ? "bg-green-900/80 border-green-700/50 hover:bg-green-800/90"
+                  : "bg-red-900/80 border-red-700/50 hover:bg-red-800/90"
+              }`}
               onClick={() => navigate(`/stock/${stock.symbol}`)}
             >
               <div className={`flex items-center gap-2 min-w-0 ${compact ? "mb-1.5" : "gap-3 mb-3"}`}>
-                <div className={`rounded-full bg-muted flex items-center justify-center flex-shrink-0 ${compact ? "w-6 h-6" : "w-8 h-8"}`}>
-                  <span className={`font-bold ${compact ? "text-xs" : "text-sm"}`}>{stock.symbol.charAt(0)}</span>
+                <div className={`rounded-full bg-white/20 flex items-center justify-center flex-shrink-0 ${compact ? "w-6 h-6" : "w-8 h-8"}`}>
+                  <span className={`font-bold text-white ${compact ? "text-xs" : "text-sm"}`}>{stock.symbol.charAt(0)}</span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className={`font-bold tracking-wide truncate ${compact ? "text-xs" : ""}`}>{stock.symbol}</div>
-                  <div className={`text-muted-foreground truncate max-w-[18ch] ${compact ? "text-[10px]" : "text-sm"}`} title={stock.name}>
+                  <div className={`font-bold tracking-wide truncate text-white ${compact ? "text-xs" : ""}`}>{stock.symbol}</div>
+                  <div className={`text-white/80 truncate max-w-[18ch] ${compact ? "text-[10px]" : "text-sm"}`} title={stock.name}>
                     {stock.name}
                   </div>
                 </div>
               </div>
               <div className={`flex justify-end items-center ${compact ? "mt-auto" : ""}`}>
-                <div className={`font-semibold ${positive ? "text-primary" : "text-destructive"} ${compact ? "text-sm" : "text-lg"}`}>
+                <div className={`font-semibold text-white ${compact ? "text-sm" : "text-lg"}`}>
                   {`${positive ? "+" : ""}${changePercent.toFixed(2)}%`}
                 </div>
               </div>

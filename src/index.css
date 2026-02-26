@@ -4,25 +4,26 @@
 
 @layer base {
   :root {
-    /* Split backdrop: red (left) / green (right) */
-    --background: 210 15% 96%;
-    --foreground: 210 14% 12%;
-    --card: 0 0% 100%;
-    --card-foreground: 210 14% 12%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 210 14% 12%;
+    /* Aligned to hero image: dark red/green/black, slightly lighter for UI */
+    /* Image: left #2A0A0A/#3D0D0D (dark red), right #0A2A0A/#0D3D0D (dark green), center #0A0A0A */
+    --background: 0 0% 7%;
+    --foreground: 0 0% 95%;
+    --card: 0 0% 12%;
+    --card-foreground: 0 0% 95%;
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 95%;
     --primary: 140 68% 34%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 100% / 0.72;
-    --secondary-foreground: 210 14% 12%;
-    --muted: 210 20% 94%;
-    --muted-foreground: 210 8% 46%;
-    --accent: 140 70% 88%;
-    --accent-foreground: 140 40% 24%;
+    --secondary: 0 0% 18% / 0.9;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 0 0% 16%;
+    --muted-foreground: 0 0% 65%;
+    --accent: 140 50% 28%;
+    --accent-foreground: 0 0% 98%;
     --destructive: 0 74% 52%;
     --destructive-foreground: 0 0% 100%;
-    --border: 210 16% 86%;
-    --input: 210 20% 94%;
+    --border: 0 0% 22%;
+    --input: 0 0% 18%;
     --ring: 140 68% 34%;
     --radius: 0.9rem;
     --positive: 140 68% 34%;
@@ -35,37 +36,36 @@
 
     /* Custom gradient and shadow tokens */
     --gradient-primary: linear-gradient(135deg, hsl(140 68% 34%), hsl(140 78% 42%));
-    --gradient-card: linear-gradient(145deg, hsl(0 0% 100% / 0.95), hsl(0 0% 100% / 0.86));
-    --shadow-elegant: 0 10px 30px -12px hsl(210 14% 12% / 0.18);
-    --shadow-card: 0 6px 18px -8px hsl(210 14% 12% / 0.12);
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 14% / 0.95), hsl(0 0% 12% / 0.9));
+    --shadow-elegant: 0 10px 30px -12px rgba(0,0,0,0.4);
+    --shadow-card: 0 6px 18px -8px rgba(0,0,0,0.35);
     --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  
+
   * {
     @apply border-border;
   }
-  
+
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: "rlig" 1, "calt" 1;
-    /* Left half red/orange, right half green; subtle dark grid on top */
+    /* Same split as hero image (dark red / dark green), slightly lighter */
     background-image:
-      linear-gradient(90deg, rgba(0,0,0,0.06) 1px, transparent 1px),
-      linear-gradient(0deg, rgba(0,0,0,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,0.08) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(0,0,0,0.08) 1px, transparent 1px),
       linear-gradient(90deg,
-        hsl(0 75% 48%) 0%,
-        hsl(15 75% 44%) 45%,
-        hsl(8 70% 40%) 49%,
-        hsl(140 60% 34%) 51%,
-        hsl(140 70% 42%) 55%,
-        hsl(140 75% 50%) 100%),
-      radial-gradient(ellipse 80% 60% at 25% 50%, hsl(15 70% 50% / 0.35), transparent 50%),
-      radial-gradient(ellipse 80% 60% at 75% 50%, hsl(140 70% 48% / 0.35), transparent 50%);
+        hsl(0 55% 14%) 0%,
+        hsl(0 50% 16%) 45%,
+        hsl(0 45% 15%) 49%,
+        hsl(140 45% 14%) 51%,
+        hsl(140 50% 16%) 55%,
+        hsl(140 55% 18%) 100%),
+      radial-gradient(ellipse 80% 60% at 25% 50%, hsl(0 50% 18% / 0.4), transparent 50%),
+      radial-gradient(ellipse 80% 60% at 75% 50%, hsl(140 50% 18% / 0.4), transparent 50%);
     background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%, 100% 100%;
     background-attachment: fixed;
   }
 
-  /* Let the split background show through main surfaces */
   .bg-background {
     background-color: transparent !important;
   }
