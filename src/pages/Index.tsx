@@ -6,6 +6,7 @@ import TopMovers from "@/components/TopMovers";
 import NewsSection from "@/components/NewsSection";
 import StockSearch from "@/components/StockSearch";
 import HeaderMenu from "@/components/HeaderMenu";
+import HeroBackdrop from "@/components/HeroBackdrop";
 import bullLogo from "@/assets/bull-logo.png";
 
 const Index = () => {
@@ -13,8 +14,9 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Hero Section with Gradient Background */}
-      <div className="bg-background relative overflow-hidden">
-        <div className="relative p-6 pb-12 space-y-8">
+      <div className="bg-background relative overflow-hidden min-h-[320px]">
+        <HeroBackdrop />
+        <div className="relative z-10 p-6 pb-12 space-y-8">
           <header className="text-center relative max-w-4xl mx-auto">
             <div className="absolute top-0 right-0 flex items-center gap-2">
               {user && (
