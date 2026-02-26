@@ -118,7 +118,7 @@ const TopMovers = ({ compact = false }: TopMoversProps) => {
               key={stock.symbol}
               className={`backdrop-blur-sm rounded-xl border transition-colors cursor-pointer shadow-md ${compact ? "p-3 flex flex-col justify-between" : "p-4"} ${
                 positive
-                  ? "bg-green-900/80 border-green-700/50 hover:bg-green-800/90"
+                  ? "bg-emerald-500/90 border-emerald-400/60 hover:bg-emerald-500"
                   : "bg-red-900/80 border-red-700/50 hover:bg-red-800/90"
               }`}
               onClick={() => navigate(`/stock/${stock.symbol}`)}
