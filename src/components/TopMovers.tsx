@@ -10,11 +10,16 @@ interface StockData {
   last_return_1d: number | null;
 }
 
+interface TopMoversProps {
+  /** When true, hide internal title and use compact card styling for single-screen layout */
+  compact?: boolean;
+}
+
 /**
  * TopMovers component - displays the top 3 stocks with biggest price movements
  * Uses smart fetching: only fetches prices for stocks that need display
  */
-const TopMovers = () => {
+const TopMovers = ({ compact = false }: TopMoversProps) => {
   const navigate = useNavigate();
   const [topStocks, setTopStocks] = useState<StockData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,21 +66,20 @@ const TopMovers = () => {
 
   if (isLoading) {
     return (
-      <section>
-        <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section className={compact ? "flex-1 min-h-0 flex flex-col" : ""}>
+        {!compact && <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>}
+        <div className={`grid grid-cols-3 gap-2 md:gap-3 ${compact ? "flex-1 min-h-0" : "gap-4"}`}>
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="bg-card p-4 rounded-lg animate-pulse">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 rounded-full bg-muted"></div>
-                <div className="space-y-2 flex-1">
-                  <div className="h-4 bg-muted rounded w-16"></div>
-                  <div className="h-3 bg-muted rounded w-24"></div>
+            <div key={i} className={`bg-card rounded-lg animate-pulse ${compact ? "p-3" : "p-4"}`}>
+              <div className={`flex items-center gap-2 ${compact ? "mb-2" : "gap-3 mb-3"}`}>
+                <div className={`rounded-full bg-muted ${compact ? "w-6 h-6" : "w-8 h-8"}`}></div>
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className={`bg-muted rounded ${compact ? "h-3 w-12" : "h-4 w-16"}`}></div>
+                  <div className={`bg-muted rounded ${compact ? "h-2.5 w-20" : "h-3 w-24"}`}></div>
                 </div>
               </div>
-              <div className="flex justify-between items-center">
-                <div className="h-4 bg-muted rounded w-16"></div>
-                <div className="h-4 bg-muted rounded w-20"></div>
+              <div className={`flex justify-end ${compact ? "mt-1" : ""}`}>
+                <div className={`bg-muted rounded ${compact ? "h-3 w-14" : "h-4 w-20"}`}></div>
               </div>
             </div>
           ))}
@@ -86,14 +90,14 @@ const TopMovers = () => {
 
   if (topStocks.length === 0) {
     return (
-      <section>
-        <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>
-        <div className="bg-card p-6 rounded-lg border border-border text-center">
-          <AlertTriangle className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground font-medium">Unable to load market movers</p>
-          <p className="text-sm text-muted-foreground mb-4">Please try again later</p>
-          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
+      <section className={compact ? "flex-1 min-h-0 flex flex-col" : ""}>
+        {!compact && <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>}
+        <div className={`bg-card rounded-lg border border-border text-center ${compact ? "p-4 flex-1 flex flex-col justify-center" : "p-6"}`}>
+          <AlertTriangle className={`text-muted-foreground mx-auto mb-2 ${compact ? "h-6 w-6" : "h-8 w-8 mb-3"}`} />
+          <p className={`text-muted-foreground font-medium ${compact ? "text-sm" : ""}`}>Unable to load market movers</p>
+          <p className={`text-muted-foreground mb-3 ${compact ? "text-xs" : "text-sm mb-4"}`}>Please try again later</p>
+          <Button variant="outline" size={compact ? "sm" : "sm"} onClick={() => window.location.reload()} className={compact ? "text-xs" : ""}>
+            <RefreshCw className="h-3 w-3 mr-1.5" />
             Refresh
           </Button>
         </div>
@@ -102,34 +106,32 @@ const TopMovers = () => {
   }
 
   return (
-    <section>
-      <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <section className={compact ? "flex-1 min-h-0 flex flex-col min-w-0" : ""}>
+      {!compact && <h2 className="text-2xl font-semibold mb-4">🚀 Top Movers</h2>}
+      <div className={`grid grid-cols-3 gap-2 md:gap-3 ${compact ? "flex-1 min-h-0 content-start" : "grid-cols-1 md:grid-cols-3 gap-4"}`}>
         {topStocks.map((stock) => {
-          // Use the accurate percentage from the database (last_return_1d is a decimal, e.g., 0.05 = 5%)
           const changePercent = stock.last_return_1d ? stock.last_return_1d * 100 : 0;
           const positive = changePercent >= 0;
 
           return (
-            <div 
-              key={stock.symbol} 
-              className="bg-card p-4 rounded-lg border border-border hover:bg-muted/30 transition-colors cursor-pointer shadow-sm"
+            <div
+              key={stock.symbol}
+              className={`bg-card/95 backdrop-blur-sm rounded-xl border border-border hover:bg-card transition-colors cursor-pointer shadow-md ${compact ? "p-3 flex flex-col justify-between" : "p-4"}`}
               onClick={() => navigate(`/stock/${stock.symbol}`)}
             >
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                  <span className="text-sm font-bold">{stock.symbol.charAt(0)}</span>
+              <div className={`flex items-center gap-2 min-w-0 ${compact ? "mb-1.5" : "gap-3 mb-3"}`}>
+                <div className={`rounded-full bg-muted flex items-center justify-center flex-shrink-0 ${compact ? "w-6 h-6" : "w-8 h-8"}`}>
+                  <span className={`font-bold ${compact ? "text-xs" : "text-sm"}`}>{stock.symbol.charAt(0)}</span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold tracking-wide">{stock.symbol}</div>
-                  <div className="text-sm text-muted-foreground truncate max-w-[18ch]" title={stock.name}>
+                  <div className={`font-bold tracking-wide truncate ${compact ? "text-xs" : ""}`}>{stock.symbol}</div>
+                  <div className={`text-muted-foreground truncate max-w-[18ch] ${compact ? "text-[10px]" : "text-sm"}`} title={stock.name}>
                     {stock.name}
                   </div>
                 </div>
               </div>
-              
-              <div className="flex justify-end items-center">
-                <div className={`text-lg font-semibold ${positive ? "text-primary" : "text-destructive"}`}>
+              <div className={`flex justify-end items-center ${compact ? "mt-auto" : ""}`}>
+                <div className={`font-semibold ${positive ? "text-primary" : "text-destructive"} ${compact ? "text-sm" : "text-lg"}`}>
                   {`${positive ? "+" : ""}${changePercent.toFixed(2)}%`}
                 </div>
               </div>
