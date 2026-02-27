@@ -71,9 +71,15 @@ const NewsSentiment = ({ newsUrl, newsTitle }: NewsSentimentProps) => {
   };
 
   const handleVote = async (sentiment: 'bull' | 'bear') => {
-    if (!user) {
-      toast.error('Sign in to vote');
-      return;
+    // Prefer auth context, but fall back to Supabase in case context is stale
+    let currentUser = user;
+    if (!currentUser) {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data?.user) {
+        toast.error('Sign in to vote');
+        return;
+      }
+      currentUser = data.user;
     }
 
     setLoading(true);
@@ -84,14 +90,14 @@ const NewsSentiment = ({ newsUrl, newsTitle }: NewsSentimentProps) => {
           .from('news_sentiment')
           .delete()
           .eq('news_url', newsUrl)
-          .eq('user_id', user.id);
+          .eq('user_id', currentUser.id);
       } else if (sentimentData.userSentiment) {
         // Update vote
         await supabase
           .from('news_sentiment')
           .update({ sentiment })
           .eq('news_url', newsUrl)
-          .eq('user_id', user.id);
+          .eq('user_id', currentUser.id);
       } else {
         // New vote
         await supabase
@@ -99,7 +105,7 @@ const NewsSentiment = ({ newsUrl, newsTitle }: NewsSentimentProps) => {
           .insert({
             news_url: newsUrl,
             news_title: newsTitle,
-            user_id: user.id,
+            user_id: currentUser.id,
             sentiment
           });
       }
@@ -114,9 +120,14 @@ const NewsSentiment = ({ newsUrl, newsTitle }: NewsSentimentProps) => {
   };
 
   const handleComment = async () => {
-    if (!user) {
-      toast.error('Sign in to comment');
-      return;
+    let currentUser = user;
+    if (!currentUser) {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data?.user) {
+        toast.error('Sign in to comment');
+        return;
+      }
+      currentUser = data.user;
     }
     if (!newComment.trim()) return;
     if (!sentimentData.userSentiment) {
@@ -130,7 +141,7 @@ const NewsSentiment = ({ newsUrl, newsTitle }: NewsSentimentProps) => {
         .from('news_sentiment')
         .update({ comment: newComment.trim() })
         .eq('news_url', newsUrl)
-        .eq('user_id', user.id);
+        .eq('user_id', currentUser.id);
 
       setNewComment('');
       await fetchSentiment();

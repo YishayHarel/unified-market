@@ -14,7 +14,7 @@ const BottomNavigation = () => {
   const location = useLocation();
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white/95 border-t border-border z-50 shadow-elegant backdrop-blur-sm">
+    <div className="fixed bottom-0 left-0 right-0 bg-black/95 border-t border-white/10 z-50 shadow-elegant backdrop-blur-sm">
       <div className="overflow-x-auto scrollbar-hide">
         <div className="flex items-center justify-center py-2 px-4">
           <div className="flex items-center gap-1">
@@ -29,8 +29,8 @@ const BottomNavigation = () => {
                   className={cn(
                     "flex flex-col items-center py-2 px-3 rounded-lg transition-colors min-w-[60px] shrink-0",
                     isActive
-                      ? "text-primary bg-primary/10"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                      ? "text-[hsl(140,68%,45%)] bg-white/10"
+                      : "text-white/70 hover:text-white hover:bg-white/5"
                   )}
                 >
                   <Icon size={20} />
