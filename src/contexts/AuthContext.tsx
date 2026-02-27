@@ -285,7 +285,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: new Error(warningMessage || "Rate limited") };
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -308,6 +308,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       // Clear rate limit on success
       clearRateLimit(email);
+
+      // Belt-and-suspenders: immediately sync session/user in case the auth
+      // state listener is delayed or missed for any reason.
+      if (data?.session) {
+        setSession(data.session);
+        setUser(data.session.user);
+      } else {
+        supabase.auth.getSession().then(({ data }) => {
+          if (data.session) {
+            setSession(data.session);
+            setUser(data.session.user);
+          }
+        }).catch((e) => {
+          console.error("[AuthContext] Error refreshing session after sign-in:", e);
+        });
+      }
     }
 
     return { error };
