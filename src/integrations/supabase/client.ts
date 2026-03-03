@@ -34,3 +34,10 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     schema: 'public',
   },
 });
+
+// TEMP: expose Supabase client globally for auth debugging in the browser console.
+// Usage in DevTools:
+//   await window.supabaseClient.auth.getSession()
+// Remove this once the login issue is fully resolved.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+;(window as any).supabaseClient = supabase;
