@@ -166,6 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Set up auth state listener
     const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        console.log("[AuthContext] onAuthStateChange", { event, session });
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
@@ -228,6 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Check subscription when session changes
   useEffect(() => {
+    console.log("[AuthContext] session changed", session);
     if (session) {
       checkSubscription();
     }
@@ -289,6 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
     });
+    console.log("[AuthContext] signInWithPassword result", { data, error });
 
     if (error) {
       // Record failed attempt
