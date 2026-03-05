@@ -166,7 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Set up auth state listener
     const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        // Use session from event when present; otherwise fetch in background (don't block load)
+        // Use session from event when present; otherwise fetch in background so load isn't blocked
         const applySession = (s: Session | null) => {
           setSession(s);
           setUser(s?.user ?? null);
@@ -207,7 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         if (event === 'TOKEN_REFRESHED') {
-          console.log('[AuthContext] Token refreshed successfully');
+          // Token refreshed; session state already updated by Supabase
         }
       }
     );
@@ -235,7 +235,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Check subscription when session changes
   useEffect(() => {
-    console.log("[AuthContext] session changed", session);
     if (session) {
       checkSubscription();
     }
@@ -297,7 +296,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
     });
-    console.log("[AuthContext] signInWithPassword result", { data, error });
 
     if (error) {
       // Record failed attempt
@@ -318,20 +316,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Clear rate limit on success
       clearRateLimit(email);
 
-      // Belt-and-suspenders: immediately sync session/user in case the auth
-      // state listener is delayed or missed for any reason.
-      if (data?.session) {
-        setSession(data.session);
-        setUser(data.session.user);
-      } else {
-        supabase.auth.getSession().then(({ data }) => {
-          if (data.session) {
-            setSession(data.session);
-            setUser(data.session.user);
-          }
-        }).catch((e) => {
-          console.error("[AuthContext] Error refreshing session after sign-in:", e);
-        });
+      // Always sync from getSession() so UI updates even if listener or response is wrong
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData.session) {
+        setSession(sessionData.session);
+        setUser(sessionData.session.user);
       }
     }
 
