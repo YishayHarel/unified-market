@@ -1,6 +1,7 @@
 // Get Stock Fundamentals - Fetches company financials from Finnhub API
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { nextFinnhubKey, getFinnhubKeys } from "../_shared/api-keys.ts"
 
 // Allowed origins for CORS
 const ALLOWED_ORIGINS = [
@@ -48,11 +49,10 @@ serve(async (req) => {
     
     console.log(`Fetching fundamentals for symbol: ${symbol}`)
     
-    // Get API key
-    const finnhubKey = Deno.env.get('FINNHUB_API_KEY')
-    if (!finnhubKey) {
-      console.error('FINNHUB_API_KEY not found in environment')
-      throw new Error('FINNHUB_API_KEY not found')
+    const finnhubKey = nextFinnhubKey();
+    if (!finnhubKey || !getFinnhubKeys().length) {
+      console.error('FINNHUB_API_KEY or FINNHUB_API_KEYS not found in environment');
+      throw new Error('FINNHUB_API_KEY not found');
     }
 
     // Fetch all data in parallel

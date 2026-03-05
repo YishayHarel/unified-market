@@ -1,6 +1,7 @@
 // Get Treasury & VIX - Fetches Treasury yields and VIX data from Alpha Vantage
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { nextAlphaVantageKey, getAlphaVantageKeys } from "../_shared/api-keys.ts"
 
 // Allowed origins for CORS
 const ALLOWED_ORIGINS = [
@@ -171,9 +172,9 @@ serve(async (req) => {
   try {
     const { type, maturity } = await req.json();
     
-    const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
-    if (!alphaVantageKey) {
-      throw new Error('ALPHA_VANTAGE_API_KEY not configured');
+    const alphaVantageKey = nextAlphaVantageKey();
+    if (!alphaVantageKey || !getAlphaVantageKeys().length) {
+      throw new Error('ALPHA_VANTAGE_API_KEY or ALPHA_VANTAGE_API_KEYS not configured');
     }
 
     const cacheKey = type === 'vix' ? 'vix' : `treasury-${maturity}`;

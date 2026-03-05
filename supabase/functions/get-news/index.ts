@@ -1,6 +1,7 @@
 // Get News - Fetches financial news from Finnhub with rate limiting
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { nextFinnhubKey, getFinnhubKeys } from "../_shared/api-keys.ts"
 
 // CORS configuration - inlined version (standalone for Supabase deployment)
 const PRODUCTION_ORIGINS = [
@@ -98,10 +99,10 @@ serve(async (req) => {
     
     console.log(`Fetching news: symbol=${sanitizedSymbol}, pageSize=${validPageSize}`)
     
-    const finnhubKey = Deno.env.get('FINNHUB_API_KEY')
-    if (!finnhubKey) {
-      console.error('FINNHUB_API_KEY not found in environment')
-      throw new Error('FINNHUB_API_KEY not found')
+    const finnhubKey = nextFinnhubKey();
+    if (!finnhubKey || !getFinnhubKeys().length) {
+      console.error('FINNHUB_API_KEY or FINNHUB_API_KEYS not found in environment');
+      throw new Error('FINNHUB_API_KEY not found');
     }
 
     let url: string;

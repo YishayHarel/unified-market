@@ -9,6 +9,7 @@ import {
   getRateLimitHeaders,
   RATE_LIMIT_TIERS 
 } from "../_shared/rate-limit.ts";
+import { nextFinnhubKey, getFinnhubKeys } from "../_shared/api-keys.ts";
 
 // Price cache with 30 second TTL
 const priceCache = new Map<string, { data: any; expiry: number }>();
@@ -78,15 +79,18 @@ async function fetchFinnhubPrice(symbol: string, apiKey: string): Promise<any | 
   }
 }
 
-// Fetches prices for multiple symbols in batches
-async function fetchPricesWithFinnhub(symbols: string[], apiKey: string): Promise<Map<string, any>> {
+// Fetches prices for multiple symbols in batches; uses next key per batch when multiple keys are set
+async function fetchPricesWithFinnhub(symbols: string[], getKey: () => string | null): Promise<Map<string, any>> {
   const results = new Map<string, any>();
-  console.log(`Fetching ${symbols.length} symbols from Finnhub`);
+  const keyCount = getFinnhubKeys().length;
+  console.log(`Fetching ${symbols.length} symbols from Finnhub${keyCount > 1 ? ` (${keyCount} keys)` : ""}`);
   
   const batchSize = 10;
   
   for (let i = 0; i < symbols.length; i += batchSize) {
     const batch = symbols.slice(i, i + batchSize);
+    const apiKey = getKey();
+    if (!apiKey) throw new Error("API key not configured");
     
     const batchPromises = batch.map(async (symbol) => {
       const priceData = await fetchFinnhubPrice(symbol, apiKey);
@@ -98,7 +102,6 @@ async function fetchPricesWithFinnhub(symbols: string[], apiKey: string): Promis
     
     await Promise.all(batchPromises);
     
-    // Small delay between batches
     if (i + batchSize < symbols.length) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
@@ -144,12 +147,11 @@ serve(async (req) => {
     
     console.log(`Fetching prices for ${symbols.length} symbols:`, symbols.join(', '))
     
-    const finnhubKey = Deno.env.get('FINNHUB_API_KEY')
-    if (!finnhubKey) {
-      console.error('FINNHUB_API_KEY not found')
+    if (!getFinnhubKeys().length) {
+      console.error('FINNHUB_API_KEY or FINNHUB_API_KEYS not found')
       throw new Error('API key not configured');
     }
-
+    
     // Check cache first
     const results: any[] = [];
     const uncachedSymbols: string[] = [];
@@ -165,9 +167,9 @@ serve(async (req) => {
     
     console.log(`${results.length} cached, ${uncachedSymbols.length} need fetching`);
     
-    // Fetch uncached
+    // Fetch uncached (round-robin key per batch when multiple keys set)
     if (uncachedSymbols.length > 0) {
-      const fetchedPrices = await fetchPricesWithFinnhub(uncachedSymbols, finnhubKey);
+      const fetchedPrices = await fetchPricesWithFinnhub(uncachedSymbols, nextFinnhubKey);
       for (const symbol of uncachedSymbols) {
         const price = fetchedPrices.get(symbol);
         if (price) results.push(price);
