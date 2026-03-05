@@ -166,22 +166,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Set up auth state listener
     const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log("[AuthContext] onAuthStateChange", { event, session });
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-        
+        // Use session from event when present; otherwise fetch in background (don't block load)
+        const applySession = (s: Session | null) => {
+          setSession(s);
+          setUser(s?.user ?? null);
+          setLoading(false);
+        };
+        if (session) {
+          applySession(session);
+        } else {
+          setLoading(false);
+          supabase.auth.getSession().then(({ data: { session: s } }) => applySession(s));
+        }
+
         if (event === 'SIGNED_IN') {
-          analytics.setUserId(session?.user?.id || '');
+          const u = session?.user ?? null;
+          if (u) analytics.setUserId(u.id);
           analytics.userAction('sign_in', { method: 'email' });
           toast({
             title: "Welcome back!",
             description: "You have been signed in successfully.",
           });
-          // Check subscription after sign in
           setTimeout(() => checkSubscription(), 100);
-          
-          // Initialize session manager for timeout tracking
           initSessionManager({
             onSessionExpired: handleSessionExpired,
             onSessionWarning: handleSessionWarning,
