@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -98,6 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const signOutRequested = useRef(false);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [subscription, setSubscription] = useState<SubscriptionStatus>({
     subscribed: false,
@@ -198,8 +199,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         if (event === 'SIGNED_OUT') {
-          setSession(null);
-          setUser(null);
+          // Only clear UI when user actually clicked sign out; ignore spurious SIGNED_OUT (e.g. after sign-in)
+          if (signOutRequested.current) {
+            signOutRequested.current = false;
+            setSession(null);
+            setUser(null);
+          }
           analytics.userAction('sign_out');
           setSubscription({
             subscribed: false,
@@ -343,14 +348,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    signOutRequested.current = true;
     const { error } = await supabase.auth.signOut();
     if (error) {
+      signOutRequested.current = false;
       toast({
         title: "Error signing out",
         description: error.message,
         variant: "destructive",
       });
     } else {
+      setSession(null);
+      setUser(null);
+      setSubscription({
+        subscribed: false,
+        tier: null,
+        subscriptionEnd: null,
+        aiCallsLimit: 0,
+      });
+      cleanupSessionManager();
       toast({
         title: "Signed out",
         description: "You have been signed out successfully.",
