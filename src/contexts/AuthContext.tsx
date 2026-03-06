@@ -254,7 +254,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string) => {
     const redirectUrl = `${window.location.origin}/`;
     
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -270,9 +270,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     } else {
       toast({
-        title: "Check your email!",
-        description: "We sent you a confirmation link.",
+        title: "Account created!",
+        description: "You can sign in now.",
       });
+      // When "Confirm email" is off, Supabase may sign them in immediately — sync session so UI updates
+      if (data?.session) {
+        setSession(data.session);
+        setUser(data.session.user);
+      } else {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData.session) {
+          setSession(sessionData.session);
+          setUser(sessionData.session.user);
+        }
+      }
     }
 
     return { error };
