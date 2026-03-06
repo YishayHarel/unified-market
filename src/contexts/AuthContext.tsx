@@ -166,7 +166,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Set up auth state listener
     const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        // Use session from event when present; otherwise fetch in background so load isn't blocked
         const applySession = (s: Session | null) => {
           setSession(s);
           setUser(s?.user ?? null);
@@ -176,7 +175,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           applySession(session);
         } else {
           setLoading(false);
-          supabase.auth.getSession().then(({ data: { session: s } }) => applySession(s));
+          // Fetch current session; never overwrite existing session with null (avoids race after sign-in)
+          supabase.auth.getSession().then(({ data: { session: s } }) => {
+            if (s) applySession(s);
+            // if s is null, do nothing — signIn/signUp may have just set session; don't wipe it
+          });
         }
 
         if (event === 'SIGNED_IN') {
