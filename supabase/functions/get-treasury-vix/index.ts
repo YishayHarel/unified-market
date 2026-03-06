@@ -170,16 +170,49 @@ serve(async (req) => {
   }
 
   try {
-    const { type, maturity } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { type, maturity } = body;
     
+    if (!getAlphaVantageKeys().length) {
+      throw new Error('ALPHA_VANTAGE_API_KEY or ALPHA_VANTAGE_API_KEYS not configured');
+    }
+
+    // Batch: one call returns VIX + 2Y + 10Y (uses key rotation to avoid rate limit)
+    if (type === 'batch') {
+      const cacheKeyBatch = 'batch-vix-2y-10y';
+      let batch = getCached(cacheKeyBatch);
+      if (!batch) {
+        const keys = getAlphaVantageKeys();
+        const delayMs = keys.length >= 3 ? 0 : 13000; // 12s between if single key (5/min)
+        const key1 = nextAlphaVantageKey();
+        const key2 = nextAlphaVantageKey();
+        const key3 = nextAlphaVantageKey();
+        let vix = key1 ? await fetchVixData(key1) : null;
+        if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+        let twoYear = key2 ? await fetchTreasuryYield('2year', key2) : null;
+        if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+        let tenYear = key3 ? await fetchTreasuryYield('10year', key3) : null;
+        batch = { vix, treasury2y: twoYear, treasury10y: tenYear };
+        if (vix || twoYear || tenYear) setCache(cacheKeyBatch, batch);
+      }
+      if (!batch?.vix && !batch?.treasury2y && !batch?.treasury10y) {
+        return new Response(
+          JSON.stringify({ error: 'Unable to fetch data. API may be rate limited.', data: null }),
+          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify(batch), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const alphaVantageKey = nextAlphaVantageKey();
-    if (!alphaVantageKey || !getAlphaVantageKeys().length) {
+    if (!alphaVantageKey) {
       throw new Error('ALPHA_VANTAGE_API_KEY or ALPHA_VANTAGE_API_KEYS not configured');
     }
 
     const cacheKey = type === 'vix' ? 'vix' : `treasury-${maturity}`;
     
-    // Check cache first
     let result = getCached(cacheKey);
     
     if (!result) {
@@ -192,7 +225,7 @@ serve(async (req) => {
         }
         result = await fetchTreasuryYield(maturity, alphaVantageKey);
       } else {
-        throw new Error('Invalid type. Use "vix" or "treasury"');
+        throw new Error('Invalid type. Use "vix", "treasury", or "batch"');
       }
       
       if (result) setCache(cacheKey, result);

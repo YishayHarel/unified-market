@@ -232,6 +232,11 @@ const MarketSentimentDashboard = () => {
                 <div className="text-sm text-muted-foreground">
                   {sentimentData.indicators.vix.interpretation}
                 </div>
+                {(sentimentData.indicators.vix as any).note && (
+                  <div className="text-xs text-muted-foreground pt-1">
+                    {(sentimentData.indicators.vix as any).note}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

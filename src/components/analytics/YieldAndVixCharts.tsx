@@ -30,36 +30,8 @@ const YieldAndVixCharts = () => {
   const [twoYearData, setTwoYearData] = useState<YieldVixData | null>(null);
   const [tenYearData, setTenYearData] = useState<YieldVixData | null>(null);
 
-  const fetchVix = async (): Promise<YieldVixData | null> => {
-    const { data, error } = await supabase.functions.invoke("get-treasury-vix", {
-      body: { type: "vix" },
-    });
-
-    if (error || !data?.data) {
-      console.error("Error fetching VIX:", error);
-      return null;
-    }
-
-    return {
-      data: data.data.map((d: any) => ({
-        date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        value: d.value,
-      })),
-      current: data.current,
-      change: data.change,
-    };
-  };
-
-  const fetchTreasury = async (maturity: string): Promise<YieldVixData | null> => {
-    const { data, error } = await supabase.functions.invoke("get-treasury-vix", {
-      body: { type: "treasury", maturity },
-    });
-
-    if (error || !data?.data) {
-      console.error(`Error fetching Treasury ${maturity}:`, error);
-      return null;
-    }
-
+  const mapApiToChart = (data: any): YieldVixData | null => {
+    if (!data?.data) return null;
     return {
       data: data.data.map((d: any) => ({
         date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
@@ -75,21 +47,21 @@ const YieldAndVixCharts = () => {
     setError(null);
 
     try {
-      // Fetch sequentially to avoid hitting Alpha Vantage rate limit (5 calls/min on free tier)
-      const vix = await fetchVix();
-      setVixData(vix);
+      // Single batch call: VIX + 2Y + 10Y (server rotates keys to avoid rate limit)
+      const { data, error } = await supabase.functions.invoke("get-treasury-vix", {
+        body: { type: "batch" },
+      });
 
-      await new Promise((resolve) => setTimeout(resolve, 1500)); // Wait 1.5s between calls
+      if (error) {
+        setError("Unable to fetch data. API may be rate limited. Try again in a minute.");
+        return;
+      }
 
-      const twoYear = await fetchTreasury("2year");
-      setTwoYearData(twoYear);
+      if (data?.vix) setVixData(mapApiToChart(data.vix));
+      if (data?.treasury2y) setTwoYearData(mapApiToChart(data.treasury2y));
+      if (data?.treasury10y) setTenYearData(mapApiToChart(data.treasury10y));
 
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      const tenYear = await fetchTreasury("10year");
-      setTenYearData(tenYear);
-
-      if (!vix && !twoYear && !tenYear) {
+      if (!data?.vix && !data?.treasury2y && !data?.treasury10y) {
         setError("Unable to fetch data. API may be rate limited. Try again in a minute.");
       }
     } catch (err) {

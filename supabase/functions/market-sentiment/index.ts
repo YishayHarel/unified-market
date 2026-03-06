@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { nextFinnhubKey, getFinnhubKeys } from "../_shared/api-keys.ts";
 
 // CORS (public edge function; allow all origins)
 const corsHeaders = {
@@ -62,10 +63,9 @@ serve(async (req) => {
 
     console.log(`Market-sentiment called (IP: ${clientIP}, remaining: ${rateCheck.remaining})`);
 
-    const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
-    
-    if (!finnhubApiKey) {
-      throw new Error('FINNHUB_API_KEY not found');
+    const finnhubApiKey = nextFinnhubKey();
+    if (!finnhubApiKey || !getFinnhubKeys().length) {
+      throw new Error('FINNHUB_API_KEY or FINNHUB_API_KEYS not found');
     }
 
     // Fetch various market sentiment indicators
@@ -247,11 +247,12 @@ serve(async (req) => {
           change: volatilityMetrics.change,
           interpretation: volatilityMetrics.level < 20 ? 'Low volatility (bullish)' : 
                          volatilityMetrics.level > 30 ? 'High volatility (bearish)' : 'Moderate volatility',
-          source: volatilityMetrics.source
+          source: volatilityMetrics.source,
+          note: 'Estimated from UVXY/VXX — for actual CBOE VIX see Treasury Yields & VIX chart below'
         }
       },
       timestamp: new Date().toISOString(),
-      lastUpdated: `Real-time data from Finnhub (VIX via ${volatilityMetrics.source})`
+      lastUpdated: `Real-time data from Finnhub (VIX estimate via ${volatilityMetrics.source})`
     };
 
     return new Response(JSON.stringify(result), {
