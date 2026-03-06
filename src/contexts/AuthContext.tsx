@@ -198,6 +198,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         if (event === 'SIGNED_OUT') {
+          setSession(null);
+          setUser(null);
           analytics.userAction('sign_out');
           setSubscription({
             subscribed: false,
@@ -205,7 +207,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             subscriptionEnd: null,
             aiCallsLimit: 0,
           });
-          // Cleanup session manager
           cleanupSessionManager();
         }
         
