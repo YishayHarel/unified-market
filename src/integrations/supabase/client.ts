@@ -2,9 +2,12 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-// Use environment variables with fallback to hardcoded values for backward compatibility
+// Use environment variables; no hardcoded fallback in production
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://bfhdtmxmlcfyxjgracbz.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmaGR0bXhtbGNmeXhqZ3JhY2J6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI4MTM1NzEsImV4cCI6MjA2ODM4OTU3MX0.4MEGlU9L98n-QGBKTCA8lW8LITzgKpqn5NIbJVlagFM";
+const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  "";
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
