@@ -27,6 +27,7 @@ Built with React, TypeScript, and Supabase.
 ### Backend
 - Supabase (PostgreSQL database, authentication, Row-Level Security)
 - Edge Functions (Deno runtime for serverless API)
+- Express API (`server/`) for modular backend routes and migration off edge functions
 - OpenAI API & Google Gemini API (AI features)
 - Finnhub API (market data)
 - News API (financial news)
@@ -44,14 +45,20 @@ Node.js 18+ is required. Install via [nvm](https://github.com/nvm-sh/nvm) (recom
 git clone https://github.com/YourUsername/UnifiedMarket.git
 cd UnifiedMarket
 
-# Install dependencies
+# Install frontend dependencies
 npm install
 
-# Start development server
+# Install Express backend dependencies
+npm --prefix server install
+
+# Start frontend development server
 npm run dev
+
+# In a second terminal, start backend server
+npm run dev:server
 ```
 
-The app will be available at `http://localhost:8080`
+The app will be available at `http://localhost:8080` and backend API at `http://localhost:4000`.
 
 ### Build for Production
 
@@ -88,6 +95,12 @@ UnifiedMarket/
 │   │   ├── get-earnings/
 │   │   └── ...
 │   └── config.toml          # Supabase configuration
+├── server/
+│   ├── src/
+│   │   ├── routes/          # Express route modules
+│   │   ├── services/        # Backend business logic modules
+│   │   └── middleware/      # API middleware (rate limits, auth, etc.)
+│   └── .env.example
 └── public/                  # Static assets
 ```
 
@@ -130,6 +143,16 @@ Required secrets (configured in Supabase):
 - `OPENAI_API_KEY` - AI features
 - `GOOGLE_GEMINI_API_KEY` - Alternative AI model
 
+Frontend/runtime variables:
+
+- `VITE_BACKEND_URL` - Express backend URL (defaults to `http://localhost:4000`)
+
+Express backend variables (see `server/.env.example`):
+
+- `PORT` - API port
+- `CORS_ORIGIN` - Allowed frontend origin(s)
+- `FINNHUB_API_KEY` or `FINNHUB_API_KEYS` - Market data key(s)
+
 ## Security
 
 - Row-Level Security (RLS) on all user data tables
@@ -141,6 +164,7 @@ Required secrets (configured in Supabase):
 
 ```bash
 npm run dev      # Start development server
+npm run dev:server # Start Express backend server
 npm run build    # Build for production
 npm run preview  # Preview production build
 npm run lint     # Run ESLint

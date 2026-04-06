@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { PerformanceCache, RequestBatcher } from '@/lib/performanceCache';
+import { fetchStockPricesFromBackend } from '@/lib/backendApi';
 
 /**
  * Stock price data structure
@@ -34,10 +35,23 @@ const priceBatcher = new RequestBatcher<string, StockPrice>(
   async (symbols: string[]) => {
     const uniqueSymbols = [...new Set(symbols)];
     console.log(`[RequestBatcher] Fetching ${uniqueSymbols.length} symbols in batch`);
-    
-    const { data, error } = await supabase.functions.invoke('get-stock-prices', {
-      body: { symbols: uniqueSymbols },
-    });
+
+    let data: any[] | null = null;
+    let error: Error | null = null;
+
+    try {
+      data = await fetchStockPricesFromBackend(uniqueSymbols);
+    } catch (backendError) {
+      console.warn('[RequestBatcher] Express backend unavailable, falling back to Supabase function');
+      const supabaseResponse = await supabase.functions.invoke('get-stock-prices', {
+        body: { symbols: uniqueSymbols },
+      });
+      data = supabaseResponse.data as any[] | null;
+      error = supabaseResponse.error as Error | null;
+      if (backendError instanceof Error) {
+        console.warn('[RequestBatcher] Backend error:', backendError.message);
+      }
+    }
     
     const results = new Map<string, StockPrice>();
     
