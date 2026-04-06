@@ -1,3 +1,5 @@
+import { getFinnhubKeys, nextFinnhubKey } from "./finnhubKeys.js";
+
 const CACHE_TTL_MS = 30 * 1000;
 const MAX_CACHE_SIZE = 1000;
 const CACHE_CLEANUP_COUNT = 200;
@@ -6,32 +8,6 @@ const FINNHUB_BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 100;
 
 const priceCache = new Map();
-let keyIndex = 0;
-
-function getFinnhubKeys() {
-  const keysCsv = process.env.FINNHUB_API_KEYS ?? "";
-  const fromCsv = keysCsv
-    .split(",")
-    .map((key) => key.trim())
-    .filter(Boolean);
-
-  if (fromCsv.length > 0) {
-    return fromCsv;
-  }
-
-  const singleKey = (process.env.FINNHUB_API_KEY ?? "").trim();
-  return singleKey ? [singleKey] : [];
-}
-
-function nextFinnhubKey() {
-  const keys = getFinnhubKeys();
-  if (keys.length === 0) {
-    return null;
-  }
-  const key = keys[keyIndex % keys.length];
-  keyIndex += 1;
-  return key;
-}
 
 function getCached(symbol) {
   const cached = priceCache.get(symbol);

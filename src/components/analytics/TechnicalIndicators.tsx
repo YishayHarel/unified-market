@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { LineChart, TrendingUp, TrendingDown, Activity, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import StockAutocomplete from "@/components/StockAutocomplete";
+import { fetchStockCandlesFromBackend } from "@/lib/backendApi";
 
 interface IndicatorSettings {
   sma20: boolean;
@@ -54,9 +55,26 @@ const TechnicalIndicators = () => {
     setError(null);
     
     try {
-      const { data, error: fetchError } = await supabase.functions.invoke('get-stock-candles', {
-        body: { symbol: sym.toUpperCase(), period: '3M', includeIndicators: true }
-      });
+      let data: any = null;
+      let fetchError: any = null;
+
+      try {
+        data = await fetchStockCandlesFromBackend({
+          symbol: sym.toUpperCase(),
+          period: '3M',
+          includeIndicators: true,
+        });
+      } catch (backendError) {
+        console.warn("Express backend unavailable for indicators, falling back to Supabase");
+        if (backendError instanceof Error) {
+          console.warn("Backend indicators error:", backendError.message);
+        }
+        const fallback = await supabase.functions.invoke('get-stock-candles', {
+          body: { symbol: sym.toUpperCase(), period: '3M', includeIndicators: true }
+        });
+        data = fallback.data;
+        fetchError = fallback.error;
+      }
       
       if (fetchError) {
         throw new Error(fetchError.message || 'Failed to fetch indicators');

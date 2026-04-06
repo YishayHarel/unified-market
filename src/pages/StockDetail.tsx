@@ -11,6 +11,10 @@ import AnalystRatings from "@/components/AnalystRatings";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  fetchStockFundamentalsFromBackend,
+  fetchStockPricesFromBackend,
+} from "@/lib/backendApi";
 
 interface StockData {
   symbol: string;
@@ -171,12 +175,32 @@ const StockDetail = () => {
         console.log('Fetching data for:', symbol.toUpperCase());
         
         const [priceResponse, fundamentalsResponse] = await Promise.allSettled([
-          supabase.functions.invoke('get-stock-prices', {
-            body: { symbols: [symbol.toUpperCase()] }
-          }),
-          supabase.functions.invoke('get-stock-fundamentals', {
-            body: { symbol: symbol.toUpperCase() }
-          })
+          (async () => {
+            try {
+              return { data: await fetchStockPricesFromBackend([symbol.toUpperCase()]), error: null };
+            } catch (backendError) {
+              console.warn("Express backend unavailable for stock prices, falling back to Supabase");
+              if (backendError instanceof Error) {
+                console.warn("Backend stock prices error:", backendError.message);
+              }
+              return supabase.functions.invoke('get-stock-prices', {
+                body: { symbols: [symbol.toUpperCase()] }
+              });
+            }
+          })(),
+          (async () => {
+            try {
+              return { data: await fetchStockFundamentalsFromBackend(symbol.toUpperCase()), error: null };
+            } catch (backendError) {
+              console.warn("Express backend unavailable for fundamentals, falling back to Supabase");
+              if (backendError instanceof Error) {
+                console.warn("Backend fundamentals error:", backendError.message);
+              }
+              return supabase.functions.invoke('get-stock-fundamentals', {
+                body: { symbol: symbol.toUpperCase() }
+              });
+            }
+          })()
         ]);
         
         console.log('Price response:', priceResponse);

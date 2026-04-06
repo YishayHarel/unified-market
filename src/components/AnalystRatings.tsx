@@ -5,6 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Star, TrendingUp, TrendingDown, RefreshCw, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchStockFundamentalsFromBackend } from "@/lib/backendApi";
 
 interface AnalystRatingsProps {
   symbol: string;
@@ -38,9 +39,22 @@ const AnalystRatings = ({ symbol }: AnalystRatingsProps) => {
     setError(null);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('get-stock-fundamentals', {
-        body: { symbol }
-      });
+      let data: any = null;
+      let fnError: any = null;
+
+      try {
+        data = await fetchStockFundamentalsFromBackend(symbol);
+      } catch (backendError) {
+        console.warn("Express backend unavailable for fundamentals, falling back to Supabase");
+        if (backendError instanceof Error) {
+          console.warn("Backend fundamentals error:", backendError.message);
+        }
+        const fallback = await supabase.functions.invoke('get-stock-fundamentals', {
+          body: { symbol }
+        });
+        data = fallback.data;
+        fnError = fallback.error;
+      }
 
       if (fnError) throw fnError;
 

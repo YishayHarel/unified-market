@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { fetchStockCandlesFromBackend } from "@/lib/backendApi";
 
 interface StockChartProps {
   symbol: string;
@@ -40,9 +41,22 @@ const StockChart = ({ symbol, period, currentPrice = 0, dayChange = 0 }: StockCh
     setError(null);
     
     try {
-      const { data, error: fetchError } = await supabase.functions.invoke('get-stock-candles', {
-        body: { symbol: symbol.toUpperCase(), period }
-      });
+      let data: any = null;
+      let fetchError: any = null;
+
+      try {
+        data = await fetchStockCandlesFromBackend({ symbol: symbol.toUpperCase(), period });
+      } catch (backendError) {
+        console.warn("Express backend unavailable for stock candles, falling back to Supabase");
+        if (backendError instanceof Error) {
+          console.warn("Backend candles error:", backendError.message);
+        }
+        const fallback = await supabase.functions.invoke('get-stock-candles', {
+          body: { symbol: symbol.toUpperCase(), period }
+        });
+        data = fallback.data;
+        fetchError = fallback.error;
+      }
       
       if (fetchError) {
         throw new Error(fetchError.message || 'Failed to fetch chart data');

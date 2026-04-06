@@ -28,6 +28,7 @@ Built with React, TypeScript, and Supabase.
 - Supabase (PostgreSQL database, authentication, Row-Level Security)
 - Edge Functions (Deno runtime for serverless API)
 - Express API (`server/`) for modular backend routes and migration off edge functions
+- Express routes migrated so far: `POST /api/stock-prices`, `POST /api/news`, `POST /api/stock-candles`, `POST /api/stock-fundamentals`, `POST /api/market-sentiment`
 - OpenAI API & Google Gemini API (AI features)
 - Finnhub API (market data)
 - News API (financial news)
@@ -97,6 +98,7 @@ UnifiedMarket/
 │   └── config.toml          # Supabase configuration
 ├── server/
 │   ├── src/
+│   │   ├── config/          # Env + app config
 │   │   ├── routes/          # Express route modules
 │   │   ├── services/        # Backend business logic modules
 │   │   └── middleware/      # API middleware (rate limits, auth, etc.)
@@ -152,6 +154,8 @@ Express backend variables (see `server/.env.example`):
 - `PORT` - API port
 - `CORS_ORIGIN` - Allowed frontend origin(s)
 - `FINNHUB_API_KEY` or `FINNHUB_API_KEYS` - Market data key(s)
+- `TWELVE_DATA_API_KEY` - Candle fallback provider
+- `ALPHA_VANTAGE_API_KEY` - Candle fallback provider
 
 ## Security
 

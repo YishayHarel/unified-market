@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Newspaper, ExternalLink, Clock, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import NewsSentiment from "@/components/NewsSentiment";
+import { fetchNewsFromBackend } from "@/lib/backendApi";
 
 interface StockNewsProps {
   symbol: string;
@@ -30,13 +31,29 @@ const StockNews = ({ symbol, companyName }: StockNewsProps) => {
     setError(null);
     
     try {
-      const { data, error: fetchError } = await supabase.functions.invoke('get-news', {
-        body: { 
+      let data: any = null;
+      let fetchError: any = null;
+
+      try {
+        data = await fetchNewsFromBackend({
           symbol,
-          companyName,
-          pageSize: 10 
+          pageSize: 10,
+        });
+      } catch (backendError) {
+        console.warn("Express backend unavailable for stock news, falling back to Supabase");
+        if (backendError instanceof Error) {
+          console.warn("Backend stock news error:", backendError.message);
         }
-      });
+        const fallback = await supabase.functions.invoke('get-news', {
+          body: { 
+            symbol,
+            companyName,
+            pageSize: 10 
+          }
+        });
+        data = fallback.data;
+        fetchError = fallback.error;
+      }
 
       if (fetchError) throw fetchError;
       

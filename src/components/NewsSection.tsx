@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import NewsSentiment from "@/components/NewsSentiment";
+import { fetchNewsFromBackend } from "@/lib/backendApi";
 
 // Force cache refresh
 
@@ -29,12 +30,28 @@ const NewsSection = () => {
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timeout')), 15000)
       );
-      
-      const fetchPromise = supabase.functions.invoke('get-news', {
-        body: { category: 'business', country: 'us', pageSize: 50 }
-      });
-      
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+
+      let data: any = null;
+      let error: any = null;
+
+      try {
+        const backendData = await Promise.race([
+          fetchNewsFromBackend({ pageSize: 50 }),
+          timeoutPromise,
+        ]) as any;
+        data = backendData;
+      } catch (backendError) {
+        console.warn("Express backend unavailable for news, falling back to Supabase");
+        if (backendError instanceof Error) {
+          console.warn("Backend news error:", backendError.message);
+        }
+        const fetchPromise = supabase.functions.invoke('get-news', {
+          body: { category: 'business', country: 'us', pageSize: 50 }
+        });
+        const fallback = await Promise.race([fetchPromise, timeoutPromise]) as any;
+        data = fallback?.data;
+        error = fallback?.error;
+      }
 
       if (error) {
         console.error('Supabase function error:', error);
