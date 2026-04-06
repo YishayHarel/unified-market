@@ -26,6 +26,7 @@ const chartColors = {
 const YieldAndVixCharts = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dataStale, setDataStale] = useState(false);
   const [vixData, setVixData] = useState<YieldVixData | null>(null);
   const [twoYearData, setTwoYearData] = useState<YieldVixData | null>(null);
   const [tenYearData, setTenYearData] = useState<YieldVixData | null>(null);
@@ -47,7 +48,8 @@ const YieldAndVixCharts = () => {
     setError(null);
 
     try {
-      // Single batch call: VIX + 2Y + 10Y (server rotates keys to avoid rate limit)
+      setDataStale(false);
+      // Single batch: FRED when configured (Supabase secret FRED_API_KEY), else Alpha Vantage with key rotation
       const { data, error } = await supabase.functions.invoke("get-treasury-vix", {
         body: { type: "batch" },
       });
@@ -55,6 +57,10 @@ const YieldAndVixCharts = () => {
       if (error) {
         setError("Unable to fetch data. API may be rate limited. Try again in a minute.");
         return;
+      }
+
+      if (data && typeof data === "object" && "stale" in data && (data as { stale?: boolean }).stale) {
+        setDataStale(true);
       }
 
       if (data?.vix) setVixData(mapApiToChart(data.vix));
@@ -214,7 +220,12 @@ const YieldAndVixCharts = () => {
           <Activity className="h-5 w-5" />
           Treasury Yields & Volatility
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {dataStale && (
+            <Badge variant="secondary" className="text-xs">
+              Cached snapshot (live refresh rate-limited)
+            </Badge>
+          )}
           <Badge variant="outline" className="text-xs text-muted-foreground">
             ~15 min delay
           </Badge>

@@ -1,11 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-
-// CORS (public edge function; allow all origins)
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+import { getCorsHeaders } from "../_shared/cors.ts"
+import {
+  nextFinnhubKey,
+  getFinnhubKeys,
+  nextTwelveDataKey,
+  getTwelveDataKeys,
+  nextAlphaVantageKey,
+  getAlphaVantageKeys,
+} from "../_shared/api-keys.ts"
 
 
 // Rate limiting - prevent abuse
@@ -37,7 +39,7 @@ function checkRateLimit(identifier: string): { allowed: boolean; remaining: numb
 
 // Cache for candle data (longer TTL since historical data doesn't change)
 const candleCache = new Map<string, { data: any; expiry: number }>();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minute cache
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minute cache — cuts repeat provider calls
 
 // If Finnhub /stock/candle is forbidden for this key/plan, back off to avoid spamming 403s
 let finnhubCandleForbiddenUntil = 0;
@@ -436,10 +438,12 @@ function calculateIndicators(candles: any[]) {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const origin = req.headers.get('origin')
+  const corsHeaders = getCorsHeaders(origin)
 
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
 
   try {
     // Rate limiting by IP
@@ -469,12 +473,12 @@ serve(async (req) => {
       throw new Error('Symbol is required');
     }
 
-    const finnhubKey = Deno.env.get('FINNHUB_API_KEY');
-    const twelveDataKey = Deno.env.get('TWELVE_DATA_API_KEY');
-    const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
+    const hasFh = getFinnhubKeys().length > 0
+    const has12 = getTwelveDataKeys().length > 0
+    const hasAv = getAlphaVantageKeys().length > 0
 
-    if (!finnhubKey && !twelveDataKey && !alphaVantageKey) {
-      throw new Error('No market data API keys configured (FINNHUB_API_KEY, TWELVE_DATA_API_KEY, or ALPHA_VANTAGE_API_KEY)');
+    if (!hasFh && !has12 && !hasAv) {
+      throw new Error('No market data API keys configured (FINNHUB_API_KEY/FINNHUB_API_KEYS, TWELVE_DATA_*, ALPHA_VANTAGE_*)');
     }
 
     const cacheKey = `${normalizedSymbol}-${period}`;
@@ -489,11 +493,17 @@ serve(async (req) => {
       const etfSymbols = ['SHY', 'IEF', 'UVXY', 'TLT', 'SPY', 'QQQ', 'VXX', 'VIXY'];
       const isEtf = etfSymbols.includes(normalizedSymbol);
 
-      if (isEtf && alphaVantageKey) {
+      const avKeyEtf = nextAlphaVantageKey()
+      const tdKeyEtf = nextTwelveDataKey()
+      const fhKey1 = nextFinnhubKey()
+      const tdKey1 = nextTwelveDataKey()
+      const avKey1 = nextAlphaVantageKey()
+
+      if (isEtf && avKeyEtf) {
         // PRIMARY for ETFs: Alpha Vantage (Finnhub returns 403, Twelve Data has tight rate limits)
         console.log(`Using Alpha Vantage as primary for ETF: ${normalizedSymbol}`);
         const avOutputsize = fromDays > 100 ? 'full' : 'compact';
-        const avCandles = await fetchAlphaVantageCandles(normalizedSymbol, avOutputsize, alphaVantageKey);
+        const avCandles = await fetchAlphaVantageCandles(normalizedSymbol, avOutputsize, avKeyEtf);
         
         if (avCandles && avCandles.length > 0) {
           const cutoffTime = Date.now() - (fromDays * 24 * 60 * 60 * 1000);
@@ -501,23 +511,23 @@ serve(async (req) => {
         }
 
         // Fallback to Twelve Data if Alpha Vantage fails for ETF
-        if (!candles && twelveDataKey) {
-          candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize, twelveDataKey);
+        if (!candles && tdKeyEtf) {
+          candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize, tdKeyEtf);
         }
       } else {
-        // PRIMARY for stocks: Finnhub → Twelve Data → Alpha Vantage
-        candles = finnhubKey
-          ? await fetchFinnhubCandles(normalizedSymbol, resolution, from, to, finnhubKey)
+        // PRIMARY for stocks: Finnhub → Twelve Data → Alpha Vantage (rotate keys per request)
+        candles = fhKey1
+          ? await fetchFinnhubCandles(normalizedSymbol, resolution, from, to, fhKey1)
           : null;
 
-        if (!candles && twelveDataKey) {
-          candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize, twelveDataKey);
+        if (!candles && tdKey1) {
+          candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize, tdKey1);
         }
 
         // Third fallback: Alpha Vantage
-        if (!candles && alphaVantageKey) {
+        if (!candles && avKey1) {
           const avOutputsize = fromDays > 100 ? 'full' : 'compact';
-          const avCandles = await fetchAlphaVantageCandles(normalizedSymbol, avOutputsize, alphaVantageKey);
+          const avCandles = await fetchAlphaVantageCandles(normalizedSymbol, avOutputsize, avKey1);
           
           if (avCandles && avCandles.length > 0) {
             const cutoffTime = Date.now() - (fromDays * 24 * 60 * 60 * 1000);
@@ -552,10 +562,10 @@ serve(async (req) => {
 
       if (!indicators) {
         // PRIMARY: Try Alpha Vantage first (pre-calculated indicators, separate rate limit pool)
-        const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
-        if (alphaVantageKey) {
+        const alphaVantageKeyInd = nextAlphaVantageKey();
+        if (alphaVantageKeyInd) {
           console.log(`Trying Alpha Vantage for ${normalizedSymbol} indicators...`);
-          indicators = await fetchAlphaVantageIndicators(normalizedSymbol, alphaVantageKey);
+          indicators = await fetchAlphaVantageIndicators(normalizedSymbol, alphaVantageKeyInd);
           
           // Add current price from candles if we have it
           if (indicators && candles && candles.length > 0) {
@@ -579,12 +589,16 @@ serve(async (req) => {
             const to = Math.floor(Date.now() / 1000);
             const from = to - (90 * 24 * 60 * 60);
 
-            indicatorCandles = finnhubKey
-              ? await fetchFinnhubCandles(normalizedSymbol, 'D', from, to, finnhubKey)
+            const fhInd = nextFinnhubKey();
+            indicatorCandles = fhInd
+              ? await fetchFinnhubCandles(normalizedSymbol, 'D', from, to, fhInd)
               : null;
 
-            if (!indicatorCandles && twelveDataKey) {
-              indicatorCandles = await fetchTwelveDataCandles(normalizedSymbol, '1day', 140, twelveDataKey);
+            if (!indicatorCandles) {
+              const tdInd = nextTwelveDataKey();
+              if (tdInd) {
+                indicatorCandles = await fetchTwelveDataCandles(normalizedSymbol, '1day', 140, tdInd);
+              }
             }
           }
 
@@ -607,7 +621,11 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ candles, indicators }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=120, stale-while-revalidate=300',
+        },
         status: 200,
       }
     );

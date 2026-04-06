@@ -1,6 +1,6 @@
 import { getFinnhubKeys, nextFinnhubKey } from "./finnhubKeys.js";
 
-const CACHE_TTL_MS = 30 * 1000;
+const CACHE_TTL_MS = 60 * 1000;
 const MAX_CACHE_SIZE = 1000;
 const CACHE_CLEANUP_COUNT = 200;
 const FINNHUB_TIMEOUT_MS = 8000;

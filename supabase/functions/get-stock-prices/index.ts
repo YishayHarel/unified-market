@@ -11,9 +11,9 @@ import {
 } from "../_shared/rate-limit.ts";
 import { nextFinnhubKey, getFinnhubKeys } from "../_shared/api-keys.ts";
 
-// Price cache with 30 second TTL
+// Price cache — 60s reduces duplicate Finnhub calls while staying fresh enough for UI
 const priceCache = new Map<string, { data: any; expiry: number }>();
-const CACHE_TTL_MS = 30 * 1000;
+const CACHE_TTL_MS = 60 * 1000;
 
 // Gets cached price or null if expired
 function getCached(symbol: string): any | null {
@@ -195,7 +195,14 @@ serve(async (req) => {
     
     return new Response(
       JSON.stringify(orderedResults),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=45, stale-while-revalidate=60',
+        },
+        status: 200,
+      },
     )
   } catch (error) {
     console.error('Error in get-stock-prices function:', error.message)
