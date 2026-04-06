@@ -23,6 +23,9 @@ server/.env
 !.env.example
 !server/.env.example
 
+# Supabase CLI local cache (do not commit)
+supabase/.temp/
+
 # Local git command log
 .git-commands.log
 
