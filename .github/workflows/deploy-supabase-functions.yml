@@ -1,6 +1,6 @@
 # Auto-deploy all Supabase Edge Functions when you push to main.
 # Frontend: Vercel auto-deploys when the repo is connected in Vercel Dashboard.
-# Backend: This workflow deploys every Edge Function in one go (no one-by-one).
+# Backend: This workflow deploys each function with --use-api (no Docker on GitHub runners).
 
 name: Deploy Supabase Edge Functions
 
@@ -29,7 +29,9 @@ jobs:
         with:
           version: latest
 
-      # Without --use-api the CLI uses Docker to bundle; that often fails on GitHub-hosted runners.
+      # --use-api: bundle on Supabase (no Docker on the runner).
+      # Deploy each real function only: skip _shared (helpers, not an entrypoint).
+      # Bulk `supabase functions deploy` can try to deploy _shared and exit immediately.
       - name: Deploy all Edge Functions
         working-directory: .
         run: |
@@ -39,5 +41,24 @@ jobs:
             exit 1
           fi
           REF="${SUPABASE_PROJECT_REF:-bfhdtmxmlcfyxjgracbz}"
-          echo "Deploying to project ref: $REF"
-          supabase functions deploy --use-api --project-ref "$REF"
+          if [ -z "${REF}" ]; then
+            REF="bfhdtmxmlcfyxjgracbz"
+          fi
+          echo "Supabase CLI: $(supabase --version)"
+          echo "Deploying to project ref: ${REF}"
+
+          shopt -s nullglob
+          for dir in supabase/functions/*/; do
+            name=$(basename "$dir")
+            if [ "$name" = "_shared" ]; then
+              echo "Skipping $name (shared helpers)"
+              continue
+            fi
+            if [ ! -f "${dir}index.ts" ] && [ ! -f "${dir}index.js" ]; then
+              echo "Skipping $name (no index.ts / index.js)"
+              continue
+            fi
+            echo "::group::Deploy $name"
+            supabase functions deploy "$name" --use-api --project-ref "$REF"
+            echo "::endgroup::"
+          done
