@@ -5,9 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { LineChart, TrendingUp, TrendingDown, Activity, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import StockAutocomplete from "@/components/StockAutocomplete";
-import { fetchStockCandlesFromBackend } from "@/lib/backendApi";
+import { fetchStockCandlesReliable } from "@/lib/stockCandlesFetch";
 
 interface IndicatorSettings {
   sma20: boolean;
@@ -55,65 +54,32 @@ const TechnicalIndicators = () => {
     setError(null);
     
     try {
-      let data: any = null;
-      let fetchError: any = null;
-
-      try {
-        data = await fetchStockCandlesFromBackend({
-          symbol: sym.toUpperCase(),
-          period: '3M',
-          includeIndicators: true,
-        });
-      } catch (backendError) {
-        console.warn("Express backend unavailable for indicators, falling back to Supabase");
-        if (backendError instanceof Error) {
-          console.warn("Backend indicators error:", backendError.message);
-        }
-        const fallback = await supabase.functions.invoke('get-stock-candles', {
-          body: { symbol: sym.toUpperCase(), period: '3M', includeIndicators: true }
-        });
-        data = fallback.data;
-        fetchError = fallback.error;
+      const primary = await fetchStockCandlesReliable({
+        symbol: sym.toUpperCase(),
+        period: "3M",
+        includeIndicators: true,
+      });
+      if (primary.error) {
+        throw new Error(primary.error.message || "Failed to fetch indicators");
       }
-      
-      if (fetchError) {
-        throw new Error(fetchError.message || 'Failed to fetch indicators');
-      }
+      let data = primary.data;
 
       // Some symbols don't have enough usable candles over 3M to compute RSI/MACD.
-      // Retry with a longer window before showing an error.
       if (!data?.indicators) {
-        let retryData: any = null;
-        let retryError: any = null;
-
-        try {
-          retryData = await fetchStockCandlesFromBackend({
-            symbol: sym.toUpperCase(),
-            period: '1Y',
-            includeIndicators: true,
-          });
-        } catch (backendRetryError) {
-          if (backendRetryError instanceof Error) {
-            console.warn("Backend indicator retry failed:", backendRetryError.message);
-          }
-          const fallbackRetry = await supabase.functions.invoke('get-stock-candles', {
-            body: { symbol: sym.toUpperCase(), period: '1Y', includeIndicators: true }
-          });
-          retryData = fallbackRetry.data;
-          retryError = fallbackRetry.error;
+        const retry = await fetchStockCandlesReliable({
+          symbol: sym.toUpperCase(),
+          period: "1Y",
+          includeIndicators: true,
+        });
+        if (retry.error) {
+          throw new Error(retry.error.message || "Failed to fetch indicators");
         }
-
-        if (retryError) {
-          throw new Error(retryError.message || 'Failed to fetch indicators');
-        }
-
-        if (!retryData?.indicators) {
-          setError('Not enough recent market history to calculate indicators for this symbol');
+        if (!retry.data?.indicators) {
+          setError("Not enough recent market history to calculate indicators for this symbol");
           setValues(null);
           return;
         }
-
-        setValues(retryData.indicators);
+        setValues(retry.data.indicators);
         return;
       }
 

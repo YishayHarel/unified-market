@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
-import { fetchStockCandlesFromBackend } from "@/lib/backendApi";
+import { fetchStockCandlesReliable } from "@/lib/stockCandlesFetch";
 import type { StockPrice } from "@/hooks/useStockPrices";
 
 interface IndexMiniChartCardProps {
@@ -27,18 +26,7 @@ function candlesFromPayload(data: unknown): CandleRow[] | null {
 }
 
 async function fetchCandlesOnce(symbol: string, period: string): Promise<CandleRow[] | null> {
-  const sym = symbol.toUpperCase();
-  try {
-    const res = await fetchStockCandlesFromBackend({ symbol: sym, period });
-    const c = candlesFromPayload(res);
-    if (c && c.length >= 2) return c;
-  } catch {
-    // fall through to Supabase
-  }
-
-  const { data, error } = await supabase.functions.invoke("get-stock-candles", {
-    body: { symbol: sym, period },
-  });
+  const { data, error } = await fetchStockCandlesReliable({ symbol, period });
   if (error) return null;
   return candlesFromPayload(data);
 }

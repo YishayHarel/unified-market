@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchStockCandlesFromBackend } from "@/lib/backendApi";
+import { fetchStockCandlesReliable } from "@/lib/stockCandlesFetch";
 
 interface CorrelationData {
   symbols: string[];
@@ -76,22 +76,7 @@ const CorrelationMatrix = () => {
       // Fetch historical data for all symbols in parallel
       const pricePromises = symbols.map(async (symbol) => {
         try {
-          let data: any = null;
-          let error: any = null;
-
-          try {
-            data = await fetchStockCandlesFromBackend({ symbol, period: '3M' });
-          } catch (backendError) {
-            if (backendError instanceof Error) {
-              console.warn(`Backend candles failed for ${symbol}:`, backendError.message);
-            }
-            const fallback = await supabase.functions.invoke('get-stock-candles', {
-              body: { symbol, period: '3M' }
-            });
-            data = fallback.data;
-            error = fallback.error;
-          }
-          
+          const { data, error } = await fetchStockCandlesReliable({ symbol, period: "3M" });
           if (error || !data?.candles) {
             console.warn(`No candle data for ${symbol}`);
             return { symbol, prices: [] };
