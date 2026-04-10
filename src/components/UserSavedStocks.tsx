@@ -1,14 +1,14 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Trash2, Plus, Search, TrendingUp, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStockPrices } from "@/hooks/useStockPrices";
+import StockAutocomplete from "@/components/StockAutocomplete";
 
 interface SavedStock {
   id: string;
@@ -26,13 +26,7 @@ const UserSavedStocks = () => {
   const [searchSymbol, setSearchSymbol] = useState("");
   const [adding, setAdding] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      fetchSavedStocks();
-    }
-  }, [user]);
-
-  const fetchSavedStocks = async () => {
+  const fetchSavedStocks = useCallback(async () => {
     try {
       const { data, error } = await (supabase
         .from("user_saved_stocks") as any)
@@ -51,23 +45,47 @@ const UserSavedStocks = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
-  // Smart price fetching - only fetch prices for saved stocks
-  const symbolsToFetch = useMemo(() => savedStocks.map(s => s.symbol), [savedStocks]);
+  useEffect(() => {
+    if (!user) {
+      setSavedStocks([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    fetchSavedStocks();
+  }, [user, fetchSavedStocks]);
+
+  const symbolsToFetch = useMemo(() => savedStocks.map((s) => s.symbol), [savedStocks]);
   const { prices, loading: pricesLoading } = useStockPrices(symbolsToFetch);
 
-  const addStock = async () => {
-    if (!searchSymbol.trim()) return;
-    
+  const resolveDisplayName = async (symbolUpper: string): Promise<string> => {
+    const { data } = await (supabase.from("stocks") as any)
+      .select("name")
+      .eq("symbol", symbolUpper)
+      .maybeSingle();
+    return (data?.name as string) || symbolUpper;
+  };
+
+  const addSaved = async (symbolUpper: string, name: string) => {
+    if (!user) {
+      toast({
+        title: "Sign in required",
+        description: "Sign in to save stocks to your list.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setAdding(true);
     try {
       const { error } = await (supabase
         .from("user_saved_stocks") as any)
         .insert({
-          user_id: user!.id,
-          symbol: searchSymbol.toUpperCase(),
-          name: searchSymbol.toUpperCase(),
+          user_id: user.id,
+          symbol: symbolUpper,
+          name,
         });
 
       if (error) {
@@ -83,7 +101,7 @@ const UserSavedStocks = () => {
       } else {
         toast({
           title: "Stock added",
-          description: `${searchSymbol.toUpperCase()} has been saved to your list`,
+          description: `${symbolUpper} has been saved to your list`,
         });
         setSearchSymbol("");
         fetchSavedStocks();
@@ -98,6 +116,13 @@ const UserSavedStocks = () => {
     } finally {
       setAdding(false);
     }
+  };
+
+  const addFromTypedSymbol = async (raw: string) => {
+    const symbolUpper = raw.trim().toUpperCase();
+    if (!symbolUpper) return;
+    const name = await resolveDisplayName(symbolUpper);
+    await addSaved(symbolUpper, name);
   };
 
   const removeStock = async (e: React.MouseEvent, stockId: string, symbol: string) => {
@@ -125,7 +150,7 @@ const UserSavedStocks = () => {
     }
   };
 
-  if (loading) {
+  if (loading && user) {
     return (
       <Card>
         <CardHeader>
@@ -145,28 +170,41 @@ const UserSavedStocks = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Search className="w-5 h-5" />
-          My Saved Stocks ({savedStocks.length})
+          My Saved Stocks ({user ? savedStocks.length : 0})
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <Input
-            placeholder="Enter stock symbol (e.g., AAPL)"
+        {!user && (
+          <p className="text-sm text-muted-foreground">
+            Sign in to save a personal watchlist. You can still search above and open any ticker.
+          </p>
+        )}
+        <div className="flex gap-2 items-start">
+          <StockAutocomplete
             value={searchSymbol}
-            onChange={(e) => setSearchSymbol(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && addStock()}
+            onChange={setSearchSymbol}
+            onSelect={(stock) => addSaved(stock.symbol.toUpperCase(), stock.name)}
+            onEnterWithoutSelection={(sym) => addFromTypedSymbol(sym)}
+            placeholder="Search symbol or company…"
+            className="flex-1 min-w-0"
           />
-          <Button onClick={addStock} disabled={adding || !searchSymbol.trim()}>
+          <Button
+            type="button"
+            className="flex-shrink-0"
+            onClick={() => addFromTypedSymbol(searchSymbol)}
+            disabled={adding || !searchSymbol.trim() || !user}
+            title={!user ? "Sign in to save" : undefined}
+          >
             <Plus className="w-4 h-4" />
           </Button>
         </div>
 
-        {savedStocks.length === 0 ? (
+        {user && savedStocks.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p>No saved stocks yet</p>
-            <p className="text-sm">Add some stocks to track them easily</p>
+            <p className="text-sm">Pick from search results or type a ticker and press +</p>
           </div>
-        ) : (
+        ) : user ? (
           <div className="space-y-2">
             {savedStocks.map((stock) => {
               const priceData = prices.get(stock.symbol);
@@ -179,23 +217,26 @@ const UserSavedStocks = () => {
                   className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
                   onClick={() => navigate(`/stock/${stock.symbol}`)}
                 >
-                  <div className="flex items-center gap-3">
-                    <Badge variant="secondary">
-                      {stock.symbol}
-                    </Badge>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Badge variant="secondary">{stock.symbol}</Badge>
                     {hasPrice ? (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         <span className="font-medium">${priceData.price.toFixed(2)}</span>
-                        <span className={`flex items-center text-sm ${isPositive ? 'text-primary' : 'text-destructive'}`}>
+                        <span
+                          className={`flex items-center text-sm flex-shrink-0 ${
+                            isPositive ? "text-primary" : "text-destructive"
+                          }`}
+                        >
                           {isPositive ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
-                          {isPositive ? '+' : ''}{(priceData.changePercent ?? 0).toFixed(2)}%
+                          {isPositive ? "+" : ""}
+                          {(priceData.changePercent ?? 0).toFixed(2)}%
                         </span>
                       </div>
                     ) : pricesLoading ? (
                       <span className="text-sm text-muted-foreground">Loading...</span>
                     ) : (
-                      <span className="text-sm text-muted-foreground">
-                        Saved {new Date(stock.saved_at).toLocaleDateString()}
+                      <span className="text-sm text-muted-foreground truncate">
+                        {stock.name || "Saved"} · {new Date(stock.saved_at).toLocaleDateString()}
                       </span>
                     )}
                   </div>
@@ -210,7 +251,7 @@ const UserSavedStocks = () => {
               );
             })}
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );

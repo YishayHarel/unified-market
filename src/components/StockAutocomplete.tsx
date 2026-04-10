@@ -16,6 +16,8 @@ interface StockAutocompleteProps {
   value: string;
   onChange: (value: string) => void;
   onSelect: (stock: StockResult) => void;
+  /** When Enter is pressed and no dropdown row is highlighted (e.g. user typed a full ticker). */
+  onEnterWithoutSelection?: (symbol: string) => void;
   placeholder?: string;
   className?: string;
   showIcon?: boolean;
@@ -25,6 +27,7 @@ const StockAutocomplete = ({
   value,
   onChange,
   onSelect,
+  onEnterWithoutSelection,
   placeholder = "Search stocks...",
   className,
   showIcon = true,
@@ -156,6 +159,20 @@ const StockAutocomplete = ({
 
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      if (isOpen && highlightedIndex >= 0 && results[highlightedIndex]) {
+        e.preventDefault();
+        handleSelect(results[highlightedIndex]);
+        return;
+      }
+      const trimmed = value.trim();
+      if (trimmed && onEnterWithoutSelection) {
+        e.preventDefault();
+        onEnterWithoutSelection(trimmed.toUpperCase());
+      }
+      return;
+    }
+
     if (!isOpen) return;
 
     switch (e.key) {
@@ -168,12 +185,6 @@ const StockAutocomplete = ({
       case "ArrowUp":
         e.preventDefault();
         setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : -1));
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (highlightedIndex >= 0 && results[highlightedIndex]) {
-          handleSelect(results[highlightedIndex]);
-        }
         break;
       case "Escape":
         setIsOpen(false);

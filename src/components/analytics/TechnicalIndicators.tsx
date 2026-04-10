@@ -79,13 +79,44 @@ const TechnicalIndicators = () => {
       if (fetchError) {
         throw new Error(fetchError.message || 'Failed to fetch indicators');
       }
-      
+
+      // Some symbols don't have enough usable candles over 3M to compute RSI/MACD.
+      // Retry with a longer window before showing an error.
       if (!data?.indicators) {
-        setError('Insufficient data for technical analysis');
-        setValues(null);
+        let retryData: any = null;
+        let retryError: any = null;
+
+        try {
+          retryData = await fetchStockCandlesFromBackend({
+            symbol: sym.toUpperCase(),
+            period: '1Y',
+            includeIndicators: true,
+          });
+        } catch (backendRetryError) {
+          if (backendRetryError instanceof Error) {
+            console.warn("Backend indicator retry failed:", backendRetryError.message);
+          }
+          const fallbackRetry = await supabase.functions.invoke('get-stock-candles', {
+            body: { symbol: sym.toUpperCase(), period: '1Y', includeIndicators: true }
+          });
+          retryData = fallbackRetry.data;
+          retryError = fallbackRetry.error;
+        }
+
+        if (retryError) {
+          throw new Error(retryError.message || 'Failed to fetch indicators');
+        }
+
+        if (!retryData?.indicators) {
+          setError('Not enough recent market history to calculate indicators for this symbol');
+          setValues(null);
+          return;
+        }
+
+        setValues(retryData.indicators);
         return;
       }
-      
+
       setValues(data.indicators);
     } catch (err: any) {
       console.error('Error fetching indicators:', err);

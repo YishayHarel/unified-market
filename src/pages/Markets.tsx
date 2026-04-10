@@ -1,4 +1,4 @@
-import TopMovers from "@/components/TopMovers";
+import MarketsOverviewWidget from "@/components/MarketsOverviewWidget";
 import UserSavedStocks from "@/components/UserSavedStocks";
 import { TopStocks } from "@/components/TopStocks";
 
@@ -9,9 +9,9 @@ const Markets = () => {
         <h1 className="text-3xl font-bold">📊 Markets</h1>
         <p className="text-muted-foreground mt-2">Market overview and your saved stocks</p>
       </header>
-      
+
+      <MarketsOverviewWidget />
       <UserSavedStocks />
-      <TopMovers />
       <TopStocks />
     </div>
   );
