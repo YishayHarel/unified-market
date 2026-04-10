@@ -489,8 +489,11 @@ serve(async (req) => {
       const to = Math.floor(Date.now() / 1000);
       const from = to - (fromDays * 24 * 60 * 60);
 
-      // ETFs that Finnhub doesn't support well - use Alpha Vantage as PRIMARY for these
-      const etfSymbols = ['SHY', 'IEF', 'UVXY', 'TLT', 'SPY', 'QQQ', 'VXX', 'VIXY'];
+      // ETFs / index proxies Finnhub often returns no_data for — use Alpha Vantage (or TD) first
+      const etfSymbols = [
+        'SHY', 'IEF', 'UVXY', 'TLT', 'SPY', 'QQQ', 'VOO', 'ONEQ', 'IVV', 'DIA', 'IWM', 'VTI',
+        'VXX', 'VIXY',
+      ];
       const isEtf = etfSymbols.includes(normalizedSymbol);
 
       const avKeyEtf = nextAlphaVantageKey()

@@ -12,6 +12,39 @@ interface IndexMiniChartCardProps {
 
 type Point = { i: number; close: number };
 
+type CandleRow = { close: number; timestamp: number };
+
+function candlesFromPayload(data: unknown): CandleRow[] | null {
+  const raw = (data as { candles?: unknown })?.candles;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out: CandleRow[] = [];
+  for (const c of raw) {
+    const close = Number((c as { close?: number }).close);
+    const ts = Number((c as { timestamp?: number }).timestamp);
+    if (Number.isFinite(close) && Number.isFinite(ts)) out.push({ close, timestamp: ts });
+  }
+  return out.length >= 2 ? out : null;
+}
+
+async function fetchCandlesOnce(symbol: string, period: string): Promise<CandleRow[] | null> {
+  const sym = symbol.toUpperCase();
+  try {
+    const res = await fetchStockCandlesFromBackend({ symbol: sym, period });
+    const c = candlesFromPayload(res);
+    if (c && c.length >= 2) return c;
+  } catch {
+    // fall through to Supabase
+  }
+
+  const { data, error } = await supabase.functions.invoke("get-stock-candles", {
+    body: { symbol: sym, period },
+  });
+  if (error) return null;
+  return candlesFromPayload(data);
+}
+
+const PERIODS_TRY = ["1W", "1M", "1D"] as const;
+
 const IndexMiniChartCard = ({ symbol, label, priceData }: IndexMiniChartCardProps) => {
   const [series, setSeries] = useState<Point[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,25 +52,16 @@ const IndexMiniChartCard = ({ symbol, label, priceData }: IndexMiniChartCardProp
   const fetchCandles = useCallback(async () => {
     setLoading(true);
     try {
-      let data: { candles?: { close: number; timestamp: number }[] } | null = null;
-      try {
-        const res = await fetchStockCandlesFromBackend({ symbol: symbol.toUpperCase(), period: "1W" });
-        data = res as { candles?: { close: number; timestamp: number }[] };
-      } catch {
-        const fallback = await supabase.functions.invoke("get-stock-candles", {
-          body: { symbol: symbol.toUpperCase(), period: "1W" },
-        });
-        data = fallback.data as { candles?: { close: number; timestamp: number }[] };
+      let best: CandleRow[] | null = null;
+      for (const period of PERIODS_TRY) {
+        const c = await fetchCandlesOnce(symbol, period);
+        if (c && c.length >= 2) {
+          best = c;
+          break;
+        }
       }
-
-      const candles = data?.candles;
-      if (candles?.length) {
-        setSeries(
-          candles.map((c, i) => ({
-            i,
-            close: c.close,
-          }))
-        );
+      if (best) {
+        setSeries(best.map((row, i) => ({ i, close: row.close })));
       } else {
         setSeries([]);
       }

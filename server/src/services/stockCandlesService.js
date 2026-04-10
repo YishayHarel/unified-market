@@ -214,6 +214,24 @@ function calculateIndicators(candles) {
   };
 }
 
+/** Match Supabase get-stock-candles: Finnhub is weak for many ETFs; AV/TD first. */
+const ETF_SYMBOLS_PRIMARY_AV = new Set([
+  "SHY",
+  "IEF",
+  "UVXY",
+  "TLT",
+  "SPY",
+  "QQQ",
+  "VOO",
+  "ONEQ",
+  "IVV",
+  "DIA",
+  "IWM",
+  "VTI",
+  "VXX",
+  "VIXY",
+]);
+
 export async function getStockCandles({ symbol, period = "1D", includeIndicators = false }) {
   const normalizedSymbol = String(symbol || "").trim().toUpperCase();
   if (!normalizedSymbol) {
@@ -227,17 +245,30 @@ export async function getStockCandles({ symbol, period = "1D", includeIndicators
   if (!candles) {
     const to = Math.floor(Date.now() / 1000);
     const from = to - fromDays * 24 * 60 * 60;
+    const cutoffMs = Date.now() - fromDays * 24 * 60 * 60 * 1000;
+    const avOutputsize = fromDays > 100 ? "full" : "compact";
 
-    candles = await fetchFinnhubCandles(normalizedSymbol, resolution, from, to);
-    if (!candles) {
-      candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize);
-    }
-    if (!candles) {
-      const outputsize = fromDays > 100 ? "full" : "compact";
-      const avCandles = await fetchAlphaVantageCandles(normalizedSymbol, outputsize);
+    if (ETF_SYMBOLS_PRIMARY_AV.has(normalizedSymbol)) {
+      const avCandles = await fetchAlphaVantageCandles(normalizedSymbol, avOutputsize);
       if (Array.isArray(avCandles) && avCandles.length > 0) {
-        const cutoff = Date.now() - fromDays * 24 * 60 * 60 * 1000;
-        candles = avCandles.filter((c) => c.timestamp >= cutoff);
+        candles = avCandles.filter((c) => c.timestamp >= cutoffMs);
+      }
+      if (!candles) {
+        candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize);
+      }
+      if (!candles) {
+        candles = await fetchFinnhubCandles(normalizedSymbol, resolution, from, to);
+      }
+    } else {
+      candles = await fetchFinnhubCandles(normalizedSymbol, resolution, from, to);
+      if (!candles) {
+        candles = await fetchTwelveDataCandles(normalizedSymbol, tdInterval, tdOutputsize);
+      }
+      if (!candles) {
+        const avCandles = await fetchAlphaVantageCandles(normalizedSymbol, avOutputsize);
+        if (Array.isArray(avCandles) && avCandles.length > 0) {
+          candles = avCandles.filter((c) => c.timestamp >= cutoffMs);
+        }
       }
     }
     if (candles) {
