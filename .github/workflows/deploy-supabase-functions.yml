@@ -29,6 +29,15 @@ jobs:
         with:
           version: latest
 
+      # Without --use-api the CLI uses Docker to bundle; that often fails on GitHub-hosted runners.
       - name: Deploy all Edge Functions
-        run: supabase functions deploy --project-ref $SUPABASE_PROJECT_REF
         working-directory: .
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::error::Add the repository secret SUPABASE_ACCESS_TOKEN (Supabase Dashboard → Account → Access Tokens)."
+            exit 1
+          fi
+          REF="${SUPABASE_PROJECT_REF:-bfhdtmxmlcfyxjgracbz}"
+          echo "Deploying to project ref: $REF"
+          supabase functions deploy --use-api --project-ref "$REF"
