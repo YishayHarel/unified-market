@@ -174,6 +174,25 @@ npm run preview  # Preview production build
 npm run lint     # Run ESLint
 ```
 
+## Production Rollout Checklist
+
+1. Deploy Supabase Edge Functions:
+   - `get-stock-prices`
+   - `get-stock-candles`
+   - `get-treasury-vix`
+2. Set Supabase secrets:
+   - `FRED_API_KEY` (recommended for VIX + Treasury)
+   - `FINNHUB_API_KEY` or `FINNHUB_API_KEYS`
+   - Optional: `TWELVE_DATA_API_KEYS`, `ALPHA_VANTAGE_API_KEYS`
+3. Deploy Express backend (`server/`) to your host (Render/Railway/Fly).
+4. Set `VITE_BACKEND_URL` in Vercel to your backend URL.
+5. Ensure backend origin is allowed by CORS (`CORS_ORIGIN`) and frontend CSP (`vercel.json` connect-src).
+6. Run smoke test after deploy:
+   - Prices load on stock detail page
+   - Candles load for 1D/1M
+   - VIX + 2Y + 10Y load in dashboard
+   - No persistent 429/500 errors in browser console or function logs
+
 ## License
 
 MIT License
