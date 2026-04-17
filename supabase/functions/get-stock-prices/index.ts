@@ -1,4 +1,4 @@
-// Get Stock Prices - Fetches real-time prices from Finnhub with caching
+// Get Stock Prices — Finnhub primary, Twelve Data batch quote for symbols Finnhub misses (60s cache)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
@@ -9,7 +9,7 @@ import {
   getRateLimitHeaders,
   RATE_LIMIT_TIERS 
 } from "../_shared/rate-limit.ts";
-import { nextFinnhubKey, getFinnhubKeys } from "../_shared/api-keys.ts";
+import { nextFinnhubKey, getFinnhubKeys, getTwelveDataKeys, nextTwelveDataKey } from "../_shared/api-keys.ts";
 
 // Price cache — 60s reduces duplicate Finnhub calls while staying fresh enough for UI
 const priceCache = new Map<string, { data: any; expiry: number }>();
@@ -90,7 +90,7 @@ async function fetchPricesWithFinnhub(symbols: string[], getKey: () => string | 
   for (let i = 0; i < symbols.length; i += batchSize) {
     const batch = symbols.slice(i, i + batchSize);
     const apiKey = getKey();
-    if (!apiKey) throw new Error("API key not configured");
+    if (!apiKey) return results;
     
     const batchPromises = batch.map(async (symbol) => {
       const priceData = await fetchFinnhubPrice(symbol, apiKey);
@@ -107,6 +107,74 @@ async function fetchPricesWithFinnhub(symbols: string[], getKey: () => string | 
     }
   }
   
+  return results;
+}
+
+/** Batch Twelve Data quote (up to 8 symbols per request) for symbols Finnhub missed */
+async function fetchPricesWithTwelveData(
+  symbols: string[],
+  getKey: () => string | null,
+): Promise<Map<string, any>> {
+  const results = new Map<string, any>();
+  if (!symbols.length || !getTwelveDataKeys().length) return results;
+
+  const batchSize = 8;
+  for (let i = 0; i < symbols.length; i += batchSize) {
+    const batch = symbols.slice(i, i + batchSize);
+    const apiKey = getKey();
+    if (!apiKey) break;
+
+    const symbolsParam = batch.join(",");
+    try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 12000);
+      const response = await fetch(
+        `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbolsParam)}&apikey=${apiKey}`,
+        { signal: controller.signal, headers: { "User-Agent": "UnifiedMarket/1.0" } },
+      );
+      clearTimeout(tid);
+
+      if (!response.ok) {
+        console.warn(`Twelve Data quote batch HTTP ${response.status}`);
+        continue;
+      }
+
+      const data = await response.json();
+
+      const pushRow = (symbol: string, row: Record<string, unknown>) => {
+        const close = row.close != null && row.close !== "null" ? parseFloat(String(row.close)) : NaN;
+        if (!Number.isFinite(close) || close <= 0 || row.code) return;
+        const priceObj = {
+          symbol,
+          price: close,
+          change: parseFloat(String(row.change || "0")) || 0,
+          changePercent: parseFloat(String(row.percent_change || "0")) || 0,
+          high: parseFloat(String(row.high || close)) || close,
+          low: parseFloat(String(row.low || close)) || close,
+          open: parseFloat(String(row.open || close)) || close,
+          previousClose: parseFloat(String(row.previous_close || close)) || close,
+          isFallback: false,
+        };
+        setCache(symbol, priceObj);
+        results.set(symbol, priceObj);
+      };
+
+      if (batch.length === 1) {
+        pushRow(batch[0], data as Record<string, unknown>);
+      } else {
+        for (const sym of batch) {
+          const block = (data as Record<string, unknown>)[sym];
+          if (block && typeof block === "object") pushRow(sym, block as Record<string, unknown>);
+        }
+      }
+    } catch (e) {
+      console.warn("Twelve Data quote batch error:", e);
+    }
+    if (i + batchSize < symbols.length) {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+
   return results;
 }
 
@@ -146,10 +214,10 @@ serve(async (req) => {
     }
     
     console.log(`Fetching prices for ${symbols.length} symbols:`, symbols.join(', '))
-    
-    if (!getFinnhubKeys().length) {
-      console.error('FINNHUB_API_KEY or FINNHUB_API_KEYS not found')
-      throw new Error('API key not configured');
+
+    if (!getFinnhubKeys().length && !getTwelveDataKeys().length) {
+      console.error("No FINNHUB_* or TWELVE_DATA_* keys configured");
+      throw new Error("API key not configured (need Finnhub and/or Twelve Data)");
     }
     
     // Check cache first
@@ -165,13 +233,21 @@ serve(async (req) => {
       }
     }
     
-    console.log(`${results.length} cached, ${uncachedSymbols.length} need fetching`);
-    
-    // Fetch uncached (round-robin key per batch when multiple keys set)
-    if (uncachedSymbols.length > 0) {
-      const fetchedPrices = await fetchPricesWithFinnhub(uncachedSymbols, nextFinnhubKey);
-      for (const symbol of uncachedSymbols) {
-        const price = fetchedPrices.get(symbol);
+    const uncachedUnique = [...new Set(uncachedSymbols)];
+    console.log(`${results.length} cached, ${uncachedUnique.length} need fetching`);
+
+    if (uncachedUnique.length > 0) {
+      const fhOnly = getFinnhubKeys().length
+        ? await fetchPricesWithFinnhub(uncachedUnique, nextFinnhubKey)
+        : new Map<string, any>();
+      const merged = new Map<string, any>(fhOnly);
+      const missing = uncachedUnique.filter((s) => !merged.has(s));
+      if (missing.length && getTwelveDataKeys().length) {
+        const tdMap = await fetchPricesWithTwelveData(missing, nextTwelveDataKey);
+        for (const [k, v] of tdMap) merged.set(k, v);
+      }
+      for (const symbol of uncachedUnique) {
+        const price = merged.get(symbol);
         if (price) results.push(price);
       }
     }

@@ -33,4 +33,13 @@ echo "== get-treasury-vix batch =="
 post_fn "get-treasury-vix" '{"type":"batch"}' | python3 -m json.tool | sed -n '1,80p'
 echo
 
+echo "== get-earnings (single day) =="
+TODAY="$(python3 -c 'from datetime import date; print(date.today().isoformat())')"
+post_fn "get-earnings" "{\"from\":\"${TODAY}\",\"to\":\"${TODAY}\"}" | python3 -m json.tool | sed -n '1,35p'
+echo
+
+echo "== get-earnings (symbol window) =="
+post_fn "get-earnings" "{\"symbol\":\"${SYMBOL}\",\"from\":\"${TODAY}\",\"to\":\"$(python3 -c 'from datetime import date,timedelta; print((date.today()+timedelta(days=120)).isoformat())')\"}" | python3 -m json.tool | sed -n '1,35p'
+echo
+
 echo "Smoke check complete."

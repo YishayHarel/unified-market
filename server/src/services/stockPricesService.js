@@ -1,4 +1,5 @@
 import { getFinnhubKeys, nextFinnhubKey } from "./finnhubKeys.js";
+import { getTwelveDataKeys, nextTwelveDataKey } from "./twelveDataKeys.js";
 
 const CACHE_TTL_MS = 60 * 1000;
 const MAX_CACHE_SIZE = 1000;
@@ -74,6 +75,65 @@ async function fetchFinnhubPrice(symbol, apiKey) {
   }
 }
 
+async function fetchPricesWithTwelveData(symbols) {
+  const results = new Map();
+  if (!symbols.length || !getTwelveDataKeys().length) return results;
+
+  const batchSize = 8;
+  for (let i = 0; i < symbols.length; i += batchSize) {
+    const batch = symbols.slice(i, i + batchSize);
+    const apiKey = nextTwelveDataKey();
+    if (!apiKey) break;
+
+    const symbolsParam = batch.join(",");
+    try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 12000);
+      const response = await fetch(
+        `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbolsParam)}&apikey=${apiKey}`,
+        { signal: controller.signal, headers: { "User-Agent": "UnifiedMarket/1.0" } },
+      );
+      clearTimeout(tid);
+      if (!response.ok) continue;
+
+      const data = await response.json();
+
+      const pushRow = (symbol, row) => {
+        const close = row.close != null && row.close !== "null" ? parseFloat(String(row.close)) : NaN;
+        if (!Number.isFinite(close) || close <= 0 || row.code) return;
+        const rowObj = {
+          symbol,
+          price: close,
+          change: parseFloat(String(row.change || "0")) || 0,
+          changePercent: parseFloat(String(row.percent_change || "0")) || 0,
+          high: parseFloat(String(row.high || close)) || close,
+          low: parseFloat(String(row.low || close)) || close,
+          open: parseFloat(String(row.open || close)) || close,
+          previousClose: parseFloat(String(row.previous_close || close)) || close,
+          isFallback: false,
+        };
+        setCache(symbol, rowObj);
+        results.set(symbol, rowObj);
+      };
+
+      if (batch.length === 1) {
+        pushRow(batch[0], data);
+      } else {
+        for (const sym of batch) {
+          const block = data[sym];
+          if (block && typeof block === "object") pushRow(sym, block);
+        }
+      }
+    } catch {
+      /* continue */
+    }
+    if (i + batchSize < symbols.length) {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+  return results;
+}
+
 async function fetchPricesWithFinnhub(symbols) {
   const results = new Map();
 
@@ -81,7 +141,7 @@ async function fetchPricesWithFinnhub(symbols) {
     const batch = symbols.slice(i, i + FINNHUB_BATCH_SIZE);
     const apiKey = nextFinnhubKey();
     if (!apiKey) {
-      throw new Error("FINNHUB_API_KEY or FINNHUB_API_KEYS is required");
+      return results;
     }
 
     const batchResults = await Promise.all(
@@ -123,10 +183,22 @@ export async function getStockPrices(symbols) {
     }
   }
 
-  const fetchedMap =
-    uncachedSymbols.length > 0
-      ? await fetchPricesWithFinnhub(uncachedSymbols)
-      : new Map();
+  if (!getFinnhubKeys().length && !getTwelveDataKeys().length) {
+    throw new Error("FINNHUB_* or TWELVE_DATA_* is required");
+  }
+
+  let fetchedMap = new Map();
+  if (uncachedSymbols.length > 0) {
+    const uniqueUncached = [...new Set(uncachedSymbols)];
+    const fhMap = getFinnhubKeys().length ? await fetchPricesWithFinnhub(uniqueUncached) : new Map();
+    const merged = new Map(fhMap);
+    const missing = uniqueUncached.filter((s) => !merged.has(s));
+    if (missing.length && getTwelveDataKeys().length) {
+      const tdMap = await fetchPricesWithTwelveData(missing);
+      for (const [k, v] of tdMap) merged.set(k, v);
+    }
+    fetchedMap = merged;
+  }
 
   const merged = uniqueSymbols.map((symbol) => {
     const cached = cachedResults.find((entry) => entry.symbol === symbol);

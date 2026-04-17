@@ -70,6 +70,8 @@ npm run preview  # Preview production build locally
 
 ## Project Structure
 
+Architecture and external API notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/EXTERNAL_APIS.md](docs/EXTERNAL_APIS.md).
+
 ```
 UnifiedMarket/
 ├── src/
