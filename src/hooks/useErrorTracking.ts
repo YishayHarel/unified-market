@@ -1,5 +1,6 @@
-import { useEffect, useCallback } from 'react';
-import { useToast } from '@/hooks/use-toast';
+import { useEffect, useCallback } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { captureException } from "@/lib/sentry";
 
 interface ErrorInfo {
   errorId: string;
@@ -58,7 +59,8 @@ export const useErrorTracking = () => {
       // Silently fail - localStorage might be full or disabled
     }
 
-    // Show user-friendly error message with reference ID
+    captureException(error, { errorId, source: "useErrorTracking" });
+
     toast({
       title: "Something went wrong",
       description: `Please try again. Reference: ${errorId}`,

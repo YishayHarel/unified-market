@@ -35,6 +35,8 @@ export interface RateLimitResult {
   remaining: number;
   resetTime: number;
   retryAfterMs?: number;
+  /** Max requests per window (for X-RateLimit-Limit) */
+  limit: number;
 }
 
 // Preset configurations for different use cases
@@ -43,6 +45,10 @@ export const RATE_LIMIT_TIERS = {
   anonymous: { maxRequests: 30, windowMs: 60 * 1000 },
   ai: { maxRequests: 10, windowMs: 60 * 1000 },
   data: { maxRequests: 60, windowMs: 60 * 1000 },
+  /** Finnhub-backed news (was ~20/min inline) */
+  news: { maxRequests: 24, windowMs: 60 * 1000 },
+  /** Multi-fetch market overview */
+  sentiment: { maxRequests: 18, windowMs: 60 * 1000 },
   auth: { maxRequests: 5, windowMs: 15 * 60 * 1000 },
 } as const;
 
@@ -59,23 +65,32 @@ export function checkRateLimit(
   // No entry or expired - create new window
   if (!entry || now > entry.resetTime) {
     rateLimits.set(identifier, { count: 1, resetTime: now + config.windowMs });
-    return { allowed: true, remaining: config.maxRequests - 1, resetTime: now + config.windowMs };
+    return {
+      allowed: true,
+      remaining: config.maxRequests - 1,
+      resetTime: now + config.windowMs,
+      limit: config.maxRequests,
+    };
   }
-  
-  // Check if limit exceeded
+
   if (entry.count >= config.maxRequests) {
     return {
       allowed: false,
       remaining: 0,
       resetTime: entry.resetTime,
-      retryAfterMs: entry.resetTime - now
+      retryAfterMs: entry.resetTime - now,
+      limit: config.maxRequests,
     };
   }
-  
-  // Increment and return
+
   entry.count++;
   rateLimits.set(identifier, entry);
-  return { allowed: true, remaining: config.maxRequests - entry.count, resetTime: entry.resetTime };
+  return {
+    allowed: true,
+    remaining: config.maxRequests - entry.count,
+    resetTime: entry.resetTime,
+    limit: config.maxRequests,
+  };
 }
 
 // Gets client identifier from request headers
@@ -114,10 +129,12 @@ function hashString(str: string): string {
 // Creates rate limit response headers
 export function getRateLimitHeaders(result: RateLimitResult): Record<string, string> {
   return {
-    'X-RateLimit-Limit': result.remaining.toString(),
-    'X-RateLimit-Remaining': Math.max(0, result.remaining).toString(),
-    'X-RateLimit-Reset': result.resetTime.toString(),
-    ...(result.retryAfterMs ? { 'Retry-After': Math.ceil(result.retryAfterMs / 1000).toString() } : {})
+    "X-RateLimit-Limit": String(result.limit),
+    "X-RateLimit-Remaining": String(Math.max(0, result.remaining)),
+    "X-RateLimit-Reset": String(Math.floor(result.resetTime / 1000)),
+    ...(result.retryAfterMs
+      ? { "Retry-After": String(Math.ceil(result.retryAfterMs / 1000)) }
+      : {}),
   };
 }
 

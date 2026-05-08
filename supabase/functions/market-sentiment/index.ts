@@ -1,67 +1,30 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { nextFinnhubKey, getFinnhubKeys } from "../_shared/api-keys.ts";
-
-// CORS (public edge function; allow all origins)
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-
-// Rate limiting - prevent abuse
-interface RateLimit {
-  count: number;
-  resetTime: number;
-}
-const rateLimits = new Map<string, RateLimit>();
-const MAX_REQUESTS_PER_MINUTE = 15;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
-  const now = Date.now();
-  const limit = rateLimits.get(identifier);
-
-  if (!limit || now > limit.resetTime) {
-    rateLimits.set(identifier, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
-    return { allowed: true, remaining: MAX_REQUESTS_PER_MINUTE - 1 };
-  }
-
-  if (limit.count >= MAX_REQUESTS_PER_MINUTE) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  limit.count++;
-  rateLimits.set(identifier, limit);
-  return { allowed: true, remaining: MAX_REQUESTS_PER_MINUTE - limit.count };
-}
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
+import {
+  checkRateLimit,
+  createRateLimitResponse,
+  getClientIdentifier,
+  RATE_LIMIT_TIERS,
+} from "../_shared/rate-limit.ts";
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
+  if (req.method === "OPTIONS") {
+    return handleCorsPreflightRequest(origin);
   }
 
-
   try {
-    // Rate limiting by IP
-    const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
-                     req.headers.get('cf-connecting-ip') || 
-                     'unknown';
-    
-    const rateCheck = checkRateLimit(clientIP);
+    const clientId = getClientIdentifier(req);
+    const rateCheck = checkRateLimit(`sentiment:${clientId}`, RATE_LIMIT_TIERS.sentiment);
     if (!rateCheck.allowed) {
-      console.log(`Rate limit exceeded for IP: ${clientIP}`);
-      return new Response(
-        JSON.stringify({ error: 'Rate limit exceeded. Please wait before making more requests.' }),
-        { 
-          status: 429, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' } 
-        }
-      );
+      return createRateLimitResponse(rateCheck, corsHeaders);
     }
 
-    console.log(`Market-sentiment called (IP: ${clientIP}, remaining: ${rateCheck.remaining})`);
+    console.log(`Market-sentiment called (client: ${clientId.slice(0, 24)}…, remaining: ${rateCheck.remaining})`);
 
     const finnhubApiKey = nextFinnhubKey();
     if (!finnhubApiKey || !getFinnhubKeys().length) {
@@ -261,12 +224,12 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in market sentiment function:', error);
-    return new Response(JSON.stringify({ 
-      error: 'Failed to fetch market sentiment data', 
-      details: error.message 
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ error: "Failed to fetch market sentiment data" }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 });

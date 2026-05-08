@@ -2,32 +2,26 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { nextFinnhubKey, getFinnhubKeys } from "../_shared/api-keys.ts"
-
-// Allowed origins for CORS
-const ALLOWED_ORIGINS = [
-  'http://localhost:8080',
-  'http://localhost:5173'
-];
-
-// Returns CORS headers based on origin
-function getCorsHeaders(origin: string | null): Record<string, string> {
-  const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
-    ? origin 
-    : ALLOWED_ORIGINS[0];
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  };
-}
+import { getCorsHeaders } from "../_shared/cors.ts"
+import {
+  checkRateLimit,
+  createRateLimitResponse,
+  getClientIdentifier,
+  RATE_LIMIT_TIERS,
+} from "../_shared/rate-limit.ts"
 
 serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response(null, { status: 204, headers: corsHeaders })
+  }
+
+  const clientId = getClientIdentifier(req);
+  const rateCheck = checkRateLimit(`fundamentals:${clientId}`, RATE_LIMIT_TIERS.data);
+  if (!rateCheck.allowed) {
+    return createRateLimitResponse(rateCheck, corsHeaders);
   }
 
   try {

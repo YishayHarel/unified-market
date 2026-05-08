@@ -1,0 +1,36 @@
+# Scheduled + manual smoke test against production Edge Functions.
+# Add repo secrets: SMOKE_SUPABASE_URL, SMOKE_SUPABASE_ANON_KEY (anon JWT only).
+
+name: Production smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbol:
+        description: "Ticker for price/candles checks"
+        required: false
+        default: "AAPL"
+  schedule:
+    - cron: "0 15 * * *" # 15:00 UTC daily (~10am US Eastern winter)
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run smoke script
+        env:
+          SMOKE_SUPABASE_URL: ${{ secrets.SMOKE_SUPABASE_URL }}
+          SMOKE_SUPABASE_ANON_KEY: ${{ secrets.SMOKE_SUPABASE_ANON_KEY }}
+          INPUT_SYMBOL: ${{ github.event.inputs.symbol }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SMOKE_SUPABASE_URL:-}" ] || [ -z "${SMOKE_SUPABASE_ANON_KEY:-}" ]; then
+            echo "::notice::Skip: set GitHub secrets SMOKE_SUPABASE_URL and SMOKE_SUPABASE_ANON_KEY to enable this workflow."
+            exit 0
+          fi
+          SYMBOL="${INPUT_SYMBOL:-AAPL}"
+          chmod +x scripts/prod-smoke-check.sh
+          ./scripts/prod-smoke-check.sh "${SMOKE_SUPABASE_URL}" "${SMOKE_SUPABASE_ANON_KEY}" "${SYMBOL}"

@@ -1,7 +1,8 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import React, { Component, ErrorInfo, ReactNode } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, RefreshCw, Home } from "lucide-react";
+import { captureException } from "@/lib/sentry";
 
 interface Props {
   children: ReactNode;
@@ -50,7 +51,12 @@ class ErrorBoundary extends Component<Props, State> {
       url: window.location.pathname,
     };
 
-    console.error('[ErrorBoundary] Caught error:', safeErrorLog);
+    console.error("[ErrorBoundary] Caught error:", safeErrorLog);
+    captureException(error, {
+      errorId: this.state.errorId,
+      componentStack: errorInfo.componentStack?.slice(0, 2000),
+      path: window.location.pathname,
+    });
 
     // Store in localStorage for debugging (last 5 errors)
     try {

@@ -3,6 +3,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { nextAlphaVantageKey, getAlphaVantageKeys } from "../_shared/api-keys.ts";
+import {
+  checkRateLimit,
+  createRateLimitResponse,
+  getClientIdentifier,
+  RATE_LIMIT_TIERS,
+} from "../_shared/rate-limit.ts";
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const dataCache = new Map<string, { data: unknown; expiry: number }>();
@@ -220,6 +226,12 @@ serve(async (req) => {
 
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
+  }
+
+  const clientId = getClientIdentifier(req);
+  const rateCheck = checkRateLimit(`treasury-vix:${clientId}`, RATE_LIMIT_TIERS.data);
+  if (!rateCheck.allowed) {
+    return createRateLimitResponse(rateCheck, corsHeaders);
   }
 
   const fredKey = (Deno.env.get("FRED_API_KEY") ?? "").trim();

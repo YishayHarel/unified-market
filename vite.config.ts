@@ -75,4 +75,18 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("@supabase")) return "supabase";
+          if (id.includes("recharts")) return "recharts";
+          if (id.includes("@radix-ui")) return "radix";
+          if (id.includes("@tanstack/react-query")) return "query";
+          return "vendor";
+        },
+      },
+    },
+  },
 }));

@@ -2,34 +2,39 @@
 
 // Production domains
 const PRODUCTION_ORIGINS = [
-  'https://unified-market.vercel.app',
+  "https://unified-market.vercel.app",
 ];
 
 // Local development origins
 const LOCAL_ORIGINS = [
-  'http://localhost:8080',
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://127.0.0.1:8080',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:3000',
+  "http://localhost:8080",
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://127.0.0.1:8080",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:3000",
 ];
+
+/** Optional Supabase secret: comma-separated exact origins (e.g. https://yourdomain.com) */
+function extraAllowedOrigins(): string[] {
+  const raw = Deno.env.get("CORS_EXTRA_ORIGINS") ?? "";
+  return raw.split(",").map((s) => s.trim()).filter(Boolean);
+}
 
 // Checks if origin is allowed (production, preview, or local)
 export function isAllowedOrigin(origin: string | null): boolean {
   if (!origin) return false;
-  
-  // Check exact production matches
+
   if (PRODUCTION_ORIGINS.includes(origin)) return true;
-  
-  // Check local development
+
   if (LOCAL_ORIGINS.includes(origin)) return true;
-  
-  // Allow Vercel preview deployments
-  if (origin.endsWith('.vercel.app')) {
+
+  if (extraAllowedOrigins().includes(origin)) return true;
+
+  if (origin.endsWith(".vercel.app")) {
     return true;
   }
-  
+
   return false;
 }
 

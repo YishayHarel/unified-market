@@ -2,85 +2,30 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { nextFinnhubKey, getFinnhubKeys } from "../_shared/api-keys.ts"
-
-// CORS configuration - inlined version (standalone for Supabase deployment)
-const PRODUCTION_ORIGINS = [
-  'https://unified-market.vercel.app',
-];
-
-const LOCAL_ORIGINS = [
-  'http://localhost:8080',
-  'http://localhost:5173',
-  'http://localhost:3000',
-];
-
-function isAllowedOrigin(origin: string | null): boolean {
-  if (!origin) return false;
-  if (PRODUCTION_ORIGINS.includes(origin)) return true;
-  if (LOCAL_ORIGINS.includes(origin)) return true;
-  if (origin.endsWith('.vercel.app')) return true;
-  return false;
-}
-
-function getCorsHeaders(origin: string | null): Record<string, string> {
-  const allowedOrigin = isAllowedOrigin(origin) ? origin : PRODUCTION_ORIGINS[0];
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin!,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Max-Age': '86400',
-  };
-}
-
-// Rate limiting
-interface RateLimit {
-  count: number;
-  resetTime: number;
-}
-const rateLimits = new Map<string, RateLimit>();
-const MAX_REQUESTS_PER_MINUTE = 20;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
-  const now = Date.now();
-  const limit = rateLimits.get(identifier);
-
-  if (!limit || now > limit.resetTime) {
-    rateLimits.set(identifier, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
-    return { allowed: true, remaining: MAX_REQUESTS_PER_MINUTE - 1 };
-  }
-
-  if (limit.count >= MAX_REQUESTS_PER_MINUTE) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  limit.count++;
-  rateLimits.set(identifier, limit);
-  return { allowed: true, remaining: MAX_REQUESTS_PER_MINUTE - limit.count };
-}
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts"
+import {
+  checkRateLimit,
+  createRateLimitResponse,
+  getClientIdentifier,
+  RATE_LIMIT_TIERS,
+} from "../_shared/rate-limit.ts"
 
 serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+    return handleCorsPreflightRequest(origin);
   }
 
   try {
-    const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
-                     req.headers.get('cf-connecting-ip') || 'unknown';
-    
-    const rateCheck = checkRateLimit(clientIP);
+    const clientId = getClientIdentifier(req);
+    const rateCheck = checkRateLimit(`news:${clientId}`, RATE_LIMIT_TIERS.news);
     if (!rateCheck.allowed) {
-      console.log(`Rate limit exceeded for IP: ${clientIP}`);
-      return new Response(
-        JSON.stringify({ error: 'Rate limit exceeded', articles: [] }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' } }
-      );
+      return createRateLimitResponse(rateCheck, corsHeaders);
     }
 
-    console.log(`Get-news called (IP: ${clientIP}, remaining: ${rateCheck.remaining})`)
+    console.log(`Get-news called (client: ${clientId.slice(0, 24)}…, remaining: ${rateCheck.remaining})`)
 
     let requestBody;
     try {
@@ -177,12 +122,11 @@ serve(async (req) => {
     }
     
     return new Response(
-      JSON.stringify({ 
-        error: userMessage, 
+      JSON.stringify({
+        error: userMessage,
         articles: [],
-        details: errorMessage
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-    )
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 },
+    );
   }
 })

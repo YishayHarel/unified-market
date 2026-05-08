@@ -1,3 +1,5 @@
+import { lazy, Suspense } from "react";
+import { Loader2 } from "lucide-react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,34 +10,33 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { useAlertChecker } from "@/hooks/useAlertChecker";
 import { AuthProvider } from "./contexts/AuthContext";
 import ErrorBoundary from "./components/ErrorBoundary";
-import ProtectedRoute from "./components/ProtectedRoute";
-import Index from "./pages/Index";
-import Auth from "./pages/Auth";
-import StockDetail from "./pages/StockDetail";
-import Earnings from "./pages/Earnings";
-import Dividends from "./pages/Dividends";
-import News from "./pages/News";
-import Markets from "./pages/Markets";
-import YishAI from "./pages/YishAI";
-import Subscription from "./pages/Subscription";
-import Settings from "./pages/Settings";
-import Install from "./pages/Install";
-import Social from "./pages/Social";
-import Discussions from "./pages/Discussions";
-import UserProfile from "./pages/UserProfile";
-import Leaderboard from "./pages/Leaderboard";
-import AdvancedAnalytics from "./pages/AdvancedAnalytics";
-import NotFound from "./pages/NotFound";
 import BottomNavigation from "./components/BottomNavigation";
 import PerformanceMonitor from "./components/PerformanceMonitor";
+
+const Index = lazy(() => import("./pages/Index"));
+const Auth = lazy(() => import("./pages/Auth"));
+const StockDetail = lazy(() => import("./pages/StockDetail"));
+const Earnings = lazy(() => import("./pages/Earnings"));
+const Dividends = lazy(() => import("./pages/Dividends"));
+const News = lazy(() => import("./pages/News"));
+const Markets = lazy(() => import("./pages/Markets"));
+const YishAI = lazy(() => import("./pages/YishAI"));
+const Subscription = lazy(() => import("./pages/Subscription"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Install = lazy(() => import("./pages/Install"));
+const Social = lazy(() => import("./pages/Social"));
+const Discussions = lazy(() => import("./pages/Discussions"));
+const UserProfile = lazy(() => import("./pages/UserProfile"));
+const Leaderboard = lazy(() => import("./pages/Leaderboard"));
+const AdvancedAnalytics = lazy(() => import("./pages/AdvancedAnalytics"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
       retry: (failureCount, error: any) => {
-        // Don't retry on 4xx errors
         if (error?.status >= 400 && error?.status < 500) {
           return false;
         }
@@ -46,33 +47,47 @@ const queryClient = new QueryClient({
   },
 });
 
+function RouteFallback() {
+  return (
+    <div
+      className="flex min-h-[40vh] items-center justify-center text-muted-foreground"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <Loader2 className="h-8 w-8 animate-spin" aria-hidden />
+    </div>
+  );
+}
+
 const AppContent = () => {
   useErrorTracking();
   useAnalytics();
-  useAlertChecker(); // Check price/volume alerts every 60s
+  useAlertChecker();
 
   return (
     <div className="relative">
-      <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/earnings" element={<Earnings />} />
-              <Route path="/dividends" element={<Dividends />} />
-              <Route path="/news" element={<News />} />
-              <Route path="/markets" element={<Markets />} />
-              <Route path="/yishai" element={<YishAI />} />
-              <Route path="/subscription" element={<Subscription />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/install" element={<Install />} />
-              <Route path="/social" element={<Social />} />
-              <Route path="/discussions" element={<Discussions />} />
-              <Route path="/profile/:userId" element={<UserProfile />} />
-              <Route path="/leaderboard" element={<Leaderboard />} />
-              <Route path="/analytics" element={<AdvancedAnalytics />} />
-              <Route path="/stock/:symbol" element={<StockDetail />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-      </Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/" element={<Index />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route path="/earnings" element={<Earnings />} />
+          <Route path="/dividends" element={<Dividends />} />
+          <Route path="/news" element={<News />} />
+          <Route path="/markets" element={<Markets />} />
+          <Route path="/yishai" element={<YishAI />} />
+          <Route path="/subscription" element={<Subscription />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/install" element={<Install />} />
+          <Route path="/social" element={<Social />} />
+          <Route path="/discussions" element={<Discussions />} />
+          <Route path="/profile/:userId" element={<UserProfile />} />
+          <Route path="/leaderboard" element={<Leaderboard />} />
+          <Route path="/analytics" element={<AdvancedAnalytics />} />
+          <Route path="/stock/:symbol" element={<StockDetail />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
       <BottomNavigation />
       <PerformanceMonitor />
     </div>

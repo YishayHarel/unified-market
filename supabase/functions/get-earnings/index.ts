@@ -3,6 +3,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { nextFinnhubKey } from "../_shared/api-keys.ts";
+import {
+  checkRateLimit,
+  createRateLimitResponse,
+  getClientIdentifier,
+  RATE_LIMIT_TIERS,
+} from "../_shared/rate-limit.ts";
 
 serve(async (req) => {
   const origin = req.headers.get("origin");
@@ -10,6 +16,12 @@ serve(async (req) => {
 
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
+  }
+
+  const clientId = getClientIdentifier(req);
+  const rateCheck = checkRateLimit(`earnings:${clientId}`, RATE_LIMIT_TIERS.data);
+  if (!rateCheck.allowed) {
+    return createRateLimitResponse(rateCheck, corsHeaders);
   }
 
   try {

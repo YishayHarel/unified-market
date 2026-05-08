@@ -42,4 +42,12 @@ echo "== get-earnings (symbol window) =="
 post_fn "get-earnings" "{\"symbol\":\"${SYMBOL}\",\"from\":\"${TODAY}\",\"to\":\"$(python3 -c 'from datetime import date,timedelta; print((date.today()+timedelta(days=120)).isoformat())')\"}" | python3 -m json.tool | sed -n '1,35p'
 echo
 
+echo "== get-news =="
+post_fn "get-news" "{\"symbol\":\"${SYMBOL}\",\"pageSize\":5}" | python3 -m json.tool | sed -n '1,30p'
+echo
+
+echo "== market-sentiment =="
+post_fn "market-sentiment" "{}" | python3 -m json.tool | sed -n '1,40p'
+echo
+
 echo "Smoke check complete."

@@ -1,22 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-
-// CORS configuration - restrict to allowed origins
-const ALLOWED_ORIGINS = [
-  'http://localhost:8080',
-  'http://localhost:5173'
-];
-
-function getCorsHeaders(origin: string | null): Record<string, string> {
-  const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
-    ? origin 
-    : ALLOWED_ORIGINS[0];
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  };
-}
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts"
+import {
+  checkRateLimit,
+  createRateLimitResponse,
+  RATE_LIMIT_TIERS,
+} from "../_shared/rate-limit.ts"
 
 interface Alert {
   id: string;
@@ -152,7 +141,7 @@ serve(async (req) => {
   const corsHeaders = getCorsHeaders(origin);
   
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreflightRequest(origin);
   }
 
   try {
@@ -182,6 +171,11 @@ serve(async (req) => {
         JSON.stringify({ error: 'Invalid token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    const rateCheck = checkRateLimit(`check-alerts:${user.id}`, RATE_LIMIT_TIERS.authenticated);
+    if (!rateCheck.allowed) {
+      return createRateLimitResponse(rateCheck, corsHeaders);
     }
 
     console.log(`Checking alerts for user: ${user.id}`);
