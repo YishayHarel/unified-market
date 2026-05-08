@@ -3,6 +3,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import {
+  getCorsHeaders,
+  getReturnUrl,
+  handleCorsPreflightRequest,
+} from "../_shared/cors.ts";
 
 // Valid price IDs - must match exactly for security
 const VALID_PRICE_IDS = [
@@ -10,24 +15,6 @@ const VALID_PRICE_IDS = [
   'price_1Sjox28Eyj3l9vnAzyqtuewV',
   'price_1SjoxF8Eyj3l9vnAdUJ9Iepb',
 ];
-
-// Allowed origins for CORS
-const ALLOWED_ORIGINS = [
-  'http://localhost:8080',
-  'http://localhost:5173'
-];
-
-// Returns CORS headers based on origin
-function getCorsHeaders(origin: string | null): Record<string, string> {
-  const allowedOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, ''))) 
-    ? origin 
-    : ALLOWED_ORIGINS[0];
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  };
-}
 
 // Logs with redacted sensitive data
 const logStep = (step: string, details?: any) => {
@@ -65,9 +52,8 @@ serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreflightRequest(origin);
   }
 
   const supabaseClient = createClient(
@@ -130,10 +116,7 @@ serve(async (req) => {
       logStep("Existing customer found");
     }
 
-    // Build return URL from allowed origins only
-    const returnOrigin = origin && ALLOWED_ORIGINS.some(o => origin.startsWith(o.replace(/\/$/, '')))
-      ? origin
-      : ALLOWED_ORIGINS[0];
+    const subscriptionBase = getReturnUrl(origin, "/subscription");
 
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
@@ -141,8 +124,8 @@ serve(async (req) => {
       customer_email: customerId ? undefined : user.email,
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
-      success_url: `${returnOrigin}/subscription?success=true`,
-      cancel_url: `${returnOrigin}/subscription?canceled=true`,
+      success_url: `${subscriptionBase}?success=true`,
+      cancel_url: `${subscriptionBase}?canceled=true`,
     });
 
     logStep("Checkout session created", { sessionId: session.id });
