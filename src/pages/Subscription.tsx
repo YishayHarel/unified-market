@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect } from "react";
+import { messageFromFunctionInvokeError } from "@/lib/parseFunctionInvokeError";
 
 const Subscription = () => {
   const { user, subscription, subscriptionLoading, checkSubscription } = useAuth();
@@ -41,19 +42,18 @@ const Subscription = () => {
 
     setLoadingTier(tierKey);
     try {
-      const { data, error } = await supabase.functions.invoke("create-checkout", {
+      const { data, error, response } = await supabase.functions.invoke("create-checkout", {
         body: { priceId },
       });
 
       if (error) {
-        const fromBody =
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error?: string }).error === "string"
-            ? (data as { error: string }).error
-            : null;
-        throw new Error(fromBody || error.message);
+        const message = await messageFromFunctionInvokeError(error, response);
+        toast({
+          title: "Error",
+          description: message,
+          variant: "destructive",
+        });
+        return;
       }
 
       if (data?.url) {
@@ -74,17 +74,16 @@ const Subscription = () => {
   const handleManageSubscription = async () => {
     setPortalLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("customer-portal");
+      const { data, error, response } = await supabase.functions.invoke("customer-portal");
 
       if (error) {
-        const fromBody =
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error?: string }).error === "string"
-            ? (data as { error: string }).error
-            : null;
-        throw new Error(fromBody || error.message);
+        const message = await messageFromFunctionInvokeError(error, response);
+        toast({
+          title: "Error",
+          description: message,
+          variant: "destructive",
+        });
+        return;
       }
 
       if (data?.url) {

@@ -152,6 +152,9 @@ serve(async (req) => {
       status: 200,
     });
   } catch (error) {
-    return safeErrorResponse(error, corsHeaders);
+    return safeErrorResponse(
+      error instanceof Error ? error : new Error(String(error)),
+      corsHeaders,
+    );
   }
 });
