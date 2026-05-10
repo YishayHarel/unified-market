@@ -92,7 +92,7 @@ serve(async (req) => {
     logStep("User authenticated", { userId: user.id });
 
     // Look up customer in Stripe by email
-    const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+    const stripe = new Stripe(stripeKey);
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
     
     // No customer found = not subscribed

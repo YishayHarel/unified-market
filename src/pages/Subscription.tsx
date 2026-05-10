@@ -41,19 +41,29 @@ const Subscription = () => {
 
     setLoadingTier(tierKey);
     try {
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
+      const { data, error } = await supabase.functions.invoke("create-checkout", {
         body: { priceId },
       });
 
-      if (error) throw error;
+      if (error) {
+        const fromBody =
+          data &&
+          typeof data === "object" &&
+          "error" in data &&
+          typeof (data as { error?: string }).error === "string"
+            ? (data as { error: string }).error
+            : null;
+        throw new Error(fromBody || error.message);
+      }
 
       if (data?.url) {
-        window.open(data.url, '_blank');
+        window.open(data.url, "_blank");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to start checkout";
       toast({
         title: "Error",
-        description: error.message || "Failed to start checkout",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -64,17 +74,27 @@ const Subscription = () => {
   const handleManageSubscription = async () => {
     setPortalLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('customer-portal');
+      const { data, error } = await supabase.functions.invoke("customer-portal");
 
-      if (error) throw error;
+      if (error) {
+        const fromBody =
+          data &&
+          typeof data === "object" &&
+          "error" in data &&
+          typeof (data as { error?: string }).error === "string"
+            ? (data as { error: string }).error
+            : null;
+        throw new Error(fromBody || error.message);
+      }
 
       if (data?.url) {
-        window.open(data.url, '_blank');
+        window.open(data.url, "_blank");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to open billing portal";
       toast({
         title: "Error",
-        description: error.message || "Failed to open billing portal",
+        description: message,
         variant: "destructive",
       });
     } finally {

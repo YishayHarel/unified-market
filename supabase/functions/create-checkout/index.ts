@@ -28,23 +28,41 @@ const logStep = (step: string, details?: any) => {
   console.log(`[CREATE-CHECKOUT] ${step}${detailsStr}`);
 };
 
-// Returns safe error without leaking internals
 function safeErrorResponse(error: unknown, corsHeaders: Record<string, string>): Response {
-  const isOperational = error instanceof Error && (
-    error.message.includes('Price ID') ||
-    error.message.includes('User not authenticated') ||
-    error.message.includes('required')
-  );
-  
-  const message = isOperational && error instanceof Error
-    ? error.message 
-    : 'An error occurred processing your request';
-  
-  console.error('[CREATE-CHECKOUT] Error:', error);
-  
-  return new Response(JSON.stringify({ error: message }), {
+  console.error("[CREATE-CHECKOUT] Error:", error);
+
+  if (error instanceof Error) {
+    const m = error.message;
+    if (m.includes("User not authenticated") || m.includes("authorization") || m.includes("not available")) {
+      return new Response(JSON.stringify({ error: m }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+      });
+    }
+    if (m.includes("STRIPE") || m.includes("Payment service configuration")) {
+      return new Response(JSON.stringify({ error: "Payment service is not configured" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 503,
+      });
+    }
+    if (m.includes("Price ID") || m.includes("required") || m.includes("Invalid request")) {
+      return new Response(JSON.stringify({ error: m }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+    // Stripe client errors (invalid price for account, etc.) — message is usually safe
+    if (m.includes("No such price") || m.includes("Stripe") || m.includes("stripe")) {
+      return new Response(JSON.stringify({ error: m }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 502,
+      });
+    }
+  }
+
+  return new Response(JSON.stringify({ error: "An error occurred processing your request" }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
-    status: 400,
+    status: 500,
   });
 }
 
@@ -106,11 +124,10 @@ serve(async (req) => {
       throw new Error("Payment service configuration error");
     }
 
-    const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+    const stripe = new Stripe(stripeKey);
 
-    // Find or create customer
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
-    let customerId;
+    let customerId: string | undefined;
     if (customers.data.length > 0) {
       customerId = customers.data[0].id;
       logStep("Existing customer found");
@@ -118,10 +135,10 @@ serve(async (req) => {
 
     const subscriptionBase = getReturnUrl(origin, "/subscription");
 
-    // Create checkout session
     const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      customer_email: customerId ? undefined : user.email,
+      ...(customerId
+        ? { customer: customerId }
+        : { customer_email: user.email ?? undefined }),
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
       success_url: `${subscriptionBase}?success=true`,
