@@ -30,49 +30,74 @@ export interface BackendCandle {
 
 const backendBaseUrl = import.meta.env.VITE_BACKEND_URL?.trim() || "http://localhost:4000";
 
-export async function fetchStockPricesFromBackend(symbols: string[]): Promise<BackendStockPrice[]> {
-  const response = await fetch(`${backendBaseUrl}/api/stock-prices`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ symbols }),
-  });
+/**
+ * Every caller in this file falls back to a Supabase Edge Function when the
+ * Express backend throws. Without a deadline that fallback never gets a chance:
+ * a cold host (Render's free tier spins down after inactivity and takes ~20s to
+ * wake) leaves the request hanging, so the user stares at a spinner instead of
+ * being served by the edge path that was ready the whole time.
+ *
+ * Aborting early still opens the connection that triggers the wake-up, so the
+ * backend warms in the background and later requests get to use it.
+ */
+const BACKEND_TIMEOUT_MS = 4000;
 
-  if (!response.ok) {
-    throw new Error(`Backend stock-prices failed: ${response.status}`);
+async function postToBackend<T>(
+  path: string,
+  body: unknown,
+  timeoutMs: number = BACKEND_TIMEOUT_MS
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${backendBaseUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend ${path} failed: ${response.status}`);
+    }
+
+    return (await response.json()) as T;
+  } catch (err) {
+    // Surface aborts as a clear timeout so callers log something meaningful.
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`Backend ${path} timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
+}
 
-  const data = await response.json();
+export async function fetchStockPricesFromBackend(symbols: string[]): Promise<BackendStockPrice[]> {
+  const data = await postToBackend<unknown>("/api/stock-prices", { symbols });
+
   if (!Array.isArray(data)) {
     throw new Error("Backend stock-prices returned invalid response");
   }
 
-  return data;
+  return data as BackendStockPrice[];
 }
 
 export async function fetchNewsFromBackend(payload: {
   symbol?: string;
   pageSize?: number;
 }): Promise<{ articles: BackendNewsArticle[]; status: string }> {
-  const response = await fetch(`${backendBaseUrl}/api/news`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  const data = await postToBackend<{ articles?: unknown; status: string }>(
+    "/api/news",
+    payload
+  );
 
-  if (!response.ok) {
-    throw new Error(`Backend news failed: ${response.status}`);
-  }
-
-  const data = await response.json();
   if (!data || !Array.isArray(data.articles)) {
     throw new Error("Backend news returned invalid response");
   }
 
-  return data;
+  return data as { articles: BackendNewsArticle[]; status: string };
 }
 
 export async function fetchStockCandlesFromBackend(payload: {
@@ -80,46 +105,13 @@ export async function fetchStockCandlesFromBackend(payload: {
   period?: string;
   includeIndicators?: boolean;
 }): Promise<{ candles: BackendCandle[] | null; indicators: any; error?: string }> {
-  const response = await fetch(`${backendBaseUrl}/api/stock-candles`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Backend stock-candles failed: ${response.status}`);
-  }
-  return response.json();
+  return postToBackend("/api/stock-candles", payload);
 }
 
 export async function fetchStockFundamentalsFromBackend(symbol: string): Promise<any> {
-  const response = await fetch(`${backendBaseUrl}/api/stock-fundamentals`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ symbol }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Backend stock-fundamentals failed: ${response.status}`);
-  }
-  return response.json();
+  return postToBackend("/api/stock-fundamentals", { symbol });
 }
 
 export async function fetchMarketSentimentFromBackend(): Promise<any> {
-  const response = await fetch(`${backendBaseUrl}/api/market-sentiment`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({}),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Backend market-sentiment failed: ${response.status}`);
-  }
-  return response.json();
+  return postToBackend("/api/market-sentiment", {});
 }

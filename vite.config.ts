@@ -12,7 +12,11 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt', not 'autoUpdate': autoUpdate activates the new worker but the
+      // page already open keeps serving the cached bundle, so returning users
+      // silently stay on the old build until they happen to reload twice.
+      // PWAUpdatePrompt surfaces the waiting worker and lets them apply it.
+      registerType: 'prompt',
       includeAssets: ['favicon.png', 'robots.txt'],
       minify: false,
       manifest: {

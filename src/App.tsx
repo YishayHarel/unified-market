@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Loader2 } from "lucide-react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
+import PWAUpdatePrompt from "@/components/PWAUpdatePrompt";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -102,6 +103,7 @@ const App = () => {
           <AuthProvider>
             <Toaster />
             <Sonner />
+            <PWAUpdatePrompt />
             <BrowserRouter>
               <AppContent />
             </BrowserRouter>
