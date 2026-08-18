@@ -27,17 +27,26 @@ export interface Feed {
 /**
  * Feeds used for the general market view.
  *
- * Nasdaq's rssoutbound feed is deliberately absent: it serves fine to curl but
- * hangs for fetch() regardless of User-Agent, so it only ever contributed a
- * timeout.
+ * Chosen so every headline arrives with a real summary — a card showing its
+ * own title twice looks broken. Publishers excluded after testing:
+ *
+ * - Seeking Alpha, Investing.com: no <description> in any of their feeds, and
+ *   Seeking Alpha answers article requests with a bot captcha, so the summary
+ *   cannot be recovered from the page either.
+ * - Nasdaq: serves to curl but hangs for fetch() regardless of User-Agent.
+ * - Business Insider, Google News: ship escaped CSS and bare anchor tags in
+ *   <description> rather than prose.
  */
 export const GENERAL_FEEDS: Feed[] = [
   { name: "CNBC Markets", url: "https://www.cnbc.com/id/10000664/device/rss/rss.html" },
   { name: "CNBC", url: "https://www.cnbc.com/id/100003114/device/rss/rss.html" },
   { name: "MarketWatch", url: "http://feeds.marketwatch.com/marketwatch/topstories/" },
-  { name: "Yahoo Finance", url: "https://finance.yahoo.com/news/rssindex" },
-  { name: "Investing.com", url: "https://www.investing.com/rss/news_25.rss" },
-  { name: "Seeking Alpha", url: "https://seekingalpha.com/market_currents.xml" },
+  // Yahoo's general feeds (rssindex, topstories) ship zero <description>
+  // elements; the per-ticker endpoint does, and ^GSPC scopes it to the S&P 500
+  // for market-wide coverage.
+  { name: "Yahoo Finance", url: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EGSPC&region=US&lang=en-US" },
+  { name: "Motley Fool", url: "https://www.fool.com/feeds/index.aspx" },
+  { name: "Fortune", url: "https://fortune.com/feed/fortune-feeds/?id=3230629" },
 ];
 
 /** Per-symbol headlines. Yahoo keys this feed off the ticker itself. */
@@ -95,8 +104,17 @@ function decodeEntities(input: string): string {
     });
 }
 
+/**
+ * Some feeds escape their markup (`&lt;a href=...&gt;`), so a single
+ * strip-then-decode pass leaves raw HTML in the visible text. Decode first,
+ * strip, then repeat once to catch markup that only appeared after decoding.
+ */
 function stripHtml(input: unknown): string {
-  return decodeEntities(String(input ?? "").replace(/<[^>]*>/g, "")).trim();
+  let text = String(input ?? "");
+  for (let pass = 0; pass < 2; pass++) {
+    text = decodeEntities(text).replace(/<[^>]*>/g, "");
+  }
+  return text.replace(/\s+/g, " ").trim();
 }
 
 function tagValue(xml: string, tag: string): string {
