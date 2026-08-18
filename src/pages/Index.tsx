@@ -7,19 +7,26 @@ import HeaderMenu from "@/components/HeaderMenu";
 import bullLogo from "@/assets/bull-logo.png";
 
 /**
- * Front page: single full-screen view, no scroll.
- * Full-screen hero background image, compact hero content, Market Movers only.
- * News and Discover Stocks live in their own sections (News, Markets).
+ * Front page: fills one screen on normal viewports, Market Movers pinned below
+ * the hero. News and Discover Stocks live in their own sections (News, Markets).
+ *
+ * Uses min-h-screen rather than a hard h-screen + overflow-hidden: the hero
+ * content has a floor it cannot shrink past, so on short viewports (landscape
+ * phones, small laptops) a fixed height made it overflow and collide with the
+ * Market Movers strip. Growing and scrolling instead keeps the one-screen look
+ * wherever it fits and degrades cleanly where it doesn't.
  */
 const Index = () => {
   const { user, signOut } = useAuth();
   return (
     <div
-      className="h-screen min-h-screen w-full overflow-hidden flex flex-col bg-cover bg-center bg-no-repeat"
+      className="min-h-screen w-full flex flex-col bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: "url(/hero-background.png)" }}
     >
       <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/50 pointer-events-none z-0" aria-hidden />
-      <div className="relative z-10 flex flex-col flex-1 min-h-0 px-4 pt-4 pb-24">
+      {/* pb-20 (80px) clears the 73px fixed bottom nav; pb-24 overshot it and
+          pushed the page past 100vh on 800px-tall screens. */}
+      <div className="relative z-10 flex flex-col flex-1 min-h-0 px-4 pt-4 pb-20">
         <div className="absolute top-4 right-4 flex items-center gap-2">
           {user && (
             <>
