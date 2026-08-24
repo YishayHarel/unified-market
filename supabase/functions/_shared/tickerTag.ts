@@ -64,12 +64,27 @@ const GENERIC_LEAD_WORDS = new Set([
 ]);
 
 /**
+ * Company names that are also everyday words in market writing. "Target Corp"
+ * normalises to "target", which would tag TGT on every "analyst raises price
+ * target". These are matched only through explicit notation ($TGT, "(TGT)"),
+ * which is handled separately and needs no name match.
+ */
+const AMBIGUOUS_NAMES = new Set([
+  "target", "gap", "block", "match", "shell", "unity", "visa", "discover",
+  "progressive", "principal", "travelers", "equity", "advance", "science",
+  "sun", "arrow", "banner", "square", "peak", "journey", "range", "signature",
+]);
+
+/**
  * Reduces "Apple Inc." to "apple" so it matches how headlines actually refer to
  * a company. Returns every distinct form worth searching for, longest first.
  */
 function companyNeedles(name: string): string[] {
   const full = name
     .replace(NAME_SUFFIX, " ")
+    // "Amazon.com Inc." must reduce to "amazon", not "amazon com", or it never
+    // matches a headline that just says "Amazon".
+    .replace(/\.(com|net|org|io|ai|co)\b/gi, " ")
     .replace(/[.,]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -77,6 +92,7 @@ function companyNeedles(name: string): string[] {
 
   // Short remnants ("hp", "3m") collide with prose too easily to match on.
   if (full.length < 4) return [];
+  if (AMBIGUOUS_NAMES.has(full)) return [];
 
   const needles = [full];
 
@@ -85,7 +101,8 @@ function companyNeedles(name: string): string[] {
   if (
     short !== full &&
     short.length >= 5 &&
-    !GENERIC_LEAD_WORDS.has(short.split(" ")[0])
+    !GENERIC_LEAD_WORDS.has(short.split(" ")[0]) &&
+    !AMBIGUOUS_NAMES.has(short)
   ) {
     needles.push(short);
   }

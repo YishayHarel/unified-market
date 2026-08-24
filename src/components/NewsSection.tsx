@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,10 @@ interface NewsArticle {
   publishedAt: string;
   url: string;
   urlToImage?: string;
+  /** Present only on cache-served articles; the live RSS fallback has none. */
+  tickers?: string[];
+  bullCount?: number;
+  bearCount?: number;
 }
 
 const NewsSection = () => {
@@ -24,33 +29,53 @@ const NewsSection = () => {
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [displayedCount, setDisplayedCount] = useState(3);
 
+  /** Symbols the signed-in user follows, used to lead the feed with their news. */
+  const loadWatchlist = async (): Promise<string[]> => {
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth?.user) return [];
+
+    const [saved, holdings] = await Promise.all([
+      supabase.from('user_saved_stocks').select('symbol').eq('user_id', auth.user.id).limit(50),
+      supabase.from('portfolio_holdings').select('symbol').eq('user_id', auth.user.id).limit(50),
+    ]);
+
+    const symbols = [
+      ...(saved.data ?? []).map((r) => r.symbol),
+      ...(holdings.data ?? []).map((r) => r.symbol),
+    ].filter(Boolean);
+
+    return [...new Set(symbols)];
+  };
+
   const fetchNews = async () => {
     try {
       // Add timeout handling for the client-side call
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Request timeout')), 15000)
       );
 
       let data: any = null;
       let error: any = null;
 
+      // The edge function is tried first for news specifically: it reads the
+      // ingest cache, so only it can return ticker tags, Bull/Bear tallies, and
+      // a watchlist-led ordering. The Express route still serves live RSS as a
+      // fallback, just without those.
       try {
-        const backendData = await Promise.race([
+        const watchlist = await loadWatchlist().catch(() => []);
+        const fetchPromise = supabase.functions.invoke('get-news', {
+          body: { category: 'business', country: 'us', pageSize: 50, watchlist },
+        });
+        const primary = (await Promise.race([fetchPromise, timeoutPromise])) as any;
+        if (primary?.error) throw primary.error;
+        data = primary?.data;
+      } catch (edgeError) {
+        console.warn('Edge news unavailable, falling back to Express backend');
+        if (edgeError instanceof Error) console.warn('Edge news error:', edgeError.message);
+        data = (await Promise.race([
           fetchNewsFromBackend({ pageSize: 50 }),
           timeoutPromise,
-        ]) as any;
-        data = backendData;
-      } catch (backendError) {
-        console.warn("Express backend unavailable for news, falling back to Supabase");
-        if (backendError instanceof Error) {
-          console.warn("Backend news error:", backendError.message);
-        }
-        const fetchPromise = supabase.functions.invoke('get-news', {
-          body: { category: 'business', country: 'us', pageSize: 50 }
-        });
-        const fallback = await Promise.race([fetchPromise, timeoutPromise]) as any;
-        data = fallback?.data;
-        error = fallback?.error;
+        ])) as any;
       }
 
       if (error) {
@@ -182,6 +207,27 @@ const NewsSection = () => {
               <p className="text-muted-foreground mb-4">
                 {article.description}
               </p>
+
+              {/* Tickers this story mentions — the reason articles are tagged
+                  at ingest, and the link from a headline to the stock page. */}
+              {article.tickers && article.tickers.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  {article.tickers.slice(0, 6).map((ticker) => (
+                    <Link
+                      key={ticker}
+                      to={`/stock/${ticker}`}
+                      className="text-xs font-semibold px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    >
+                      {ticker}
+                    </Link>
+                  ))}
+                  {(article.bullCount || article.bearCount) ? (
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      🐂 {article.bullCount ?? 0} · 🐻 {article.bearCount ?? 0}
+                    </span>
+                  ) : null}
+                </div>
+              )}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span>{article.source.name}</span>
