@@ -16,9 +16,38 @@ import { buildMatcher, extractTickers, type StockRef } from "../_shared/tickerTa
 // feeds offered rather than trimming for a UI page size.
 const INGEST_LIMIT = 500;
 
-// Symbols are ranked so the universe stays weighted toward companies headlines
-// actually mention.
-const UNIVERSE_LIMIT = 5000;
+// PostgREST caps a response at 1000 rows regardless of the requested limit, so
+// the universe has to be paged in. Ordering by market_cap is not an option:
+// only 60 of ~30k rows have one populated, so a "top N" slice would be
+// arbitrary and miss household names.
+const UNIVERSE_PAGE_SIZE = 1000;
+const UNIVERSE_MAX_PAGES = 40;
+
+async function loadSymbolUniverse(
+  supabase: ReturnType<typeof createClient>,
+): Promise<StockRef[]> {
+  const universe: StockRef[] = [];
+
+  for (let page = 0; page < UNIVERSE_MAX_PAGES; page++) {
+    const from = page * UNIVERSE_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("stocks")
+      .select("symbol, name")
+      .order("symbol", { ascending: true })
+      .range(from, from + UNIVERSE_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error(`Symbol universe page ${page} failed:`, error.message);
+      break;
+    }
+    if (!data?.length) break;
+
+    universe.push(...(data as StockRef[]));
+    if (data.length < UNIVERSE_PAGE_SIZE) break;
+  }
+
+  return universe;
+}
 
 /**
  * Feeds append their own tracking parameters, so the same story arrives with
@@ -68,18 +97,11 @@ serve(async (req) => {
   try {
     const [articles, universe] = await Promise.all([
       aggregateFeeds(GENERAL_FEEDS, INGEST_LIMIT),
-      supabase
-        .from("stocks")
-        .select("symbol, name")
-        .order("market_cap", { ascending: false, nullsFirst: false })
-        .limit(UNIVERSE_LIMIT),
+      loadSymbolUniverse(supabase),
     ]);
 
-    if (universe.error) {
-      console.error("Failed to load symbol universe:", universe.error.message);
-    }
-
-    const matcher = buildMatcher((universe.data ?? []) as StockRef[]);
+    const matcher = buildMatcher(universe);
+    console.log(`Loaded ${universe.length} symbols, ${matcher.byName.size} name forms`);
 
     const rows = articles.map((article: Article) => ({
       url: canonicalUrl(article.url),

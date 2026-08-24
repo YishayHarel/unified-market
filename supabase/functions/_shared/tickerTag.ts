@@ -19,7 +19,10 @@ export interface StockRef {
 
 export interface TickerMatcher {
   bySymbol: Map<string, string>;
-  byName: Array<{ needle: string; symbol: string }>;
+  /** Normalised company name -> symbol, looked up by n-gram. */
+  byName: Map<string, string>;
+  /** Longest name in words, bounding how many n-grams we generate. */
+  maxNameWords: number;
 }
 
 /**
@@ -40,9 +43,12 @@ const NAME_SUFFIX = new RegExp(
   "gi",
 );
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+/**
+ * Longest company name, in words, we will try to match. Registered names run to
+ * a dozen words ("... Sponsored ADR Class A Ordinary Shares") but headlines
+ * never use them, and every extra word multiplies the n-grams we generate.
+ */
+const MAX_NAME_WORDS = 5;
 
 /**
  * Industry descriptors headlines routinely drop: the news says "Synchrony",
@@ -112,22 +118,30 @@ function companyNeedles(name: string): string[] {
 
 export function buildMatcher(stocks: StockRef[]): TickerMatcher {
   const bySymbol = new Map<string, string>();
-  const byName: Array<{ needle: string; symbol: string }> = [];
+  const byName = new Map<string, string>();
+  let maxNameWords = 1;
 
   for (const stock of stocks) {
     const symbol = stock.symbol?.trim().toUpperCase();
     if (!symbol) continue;
     bySymbol.set(symbol, symbol);
 
-    if (stock.name) {
-      for (const needle of companyNeedles(stock.name)) {
-        byName.push({ needle, symbol });
-      }
+    if (!stock.name) continue;
+    for (const needle of companyNeedles(stock.name)) {
+      // Several listings share a name (ordinary shares, ADRs, foreign lines).
+      // Keeping the first occurrence makes the result deterministic; preferring
+      // the shorter symbol favours the primary US listing (BABA over BABAF).
+      const words = needle.split(" ").length;
+      if (words > MAX_NAME_WORDS) continue;
+
+      const existing = byName.get(needle);
+      if (existing && existing.length <= symbol.length) continue;
+      byName.set(needle, symbol);
+      if (words > maxNameWords) maxNameWords = words;
     }
   }
 
-  byName.sort((a, b) => b.needle.length - a.needle.length);
-  return { bySymbol, byName };
+  return { bySymbol, byName, maxNameWords };
 }
 
 export function extractTickers(text: string, matcher: TickerMatcher): string[] {
@@ -157,11 +171,24 @@ export function extractTickers(text: string, matcher: TickerMatcher): string[] {
   }
 
   // 3. Company names, which is how headlines usually refer to a company.
-  const haystack = text.toLowerCase();
-  for (const { needle, symbol } of matcher.byName) {
-    if (found.has(symbol)) continue;
-    const boundary = new RegExp(`\\b${escapeRegExp(needle)}\\b`);
-    if (boundary.test(haystack)) found.add(symbol);
+  //
+  //    Tokenise once and look up n-grams rather than testing a regex per known
+  //    name: with ~30k listed symbols the per-name scan is millions of regex
+  //    executions per article, while this is proportional to article length.
+  //    Periods split words here so "Amazon.com" yields "amazon", matching the
+  //    needle. Symbol matching above works on the raw text, so dotted tickers
+  //    like BRK.B are unaffected.
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  for (let i = 0; i < words.length; i++) {
+    for (let n = 1; n <= matcher.maxNameWords && i + n <= words.length; n++) {
+      const symbol = matcher.byName.get(words.slice(i, i + n).join(" "));
+      if (symbol) found.add(symbol);
+    }
   }
 
   return [...found];
