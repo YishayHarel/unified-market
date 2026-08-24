@@ -81,6 +81,11 @@ const AMBIGUOUS_NAMES = new Set([
   // "a post on Substack", Themes Airlines ETF on "the themes that...".
   "bill", "universe", "next", "demand", "giant", "critical", "scott", "test",
   "post", "themes", "themes airlines",
+  // Liquidity Services, Monday.com and Strategy Inc are all real listings whose
+  // names are unremarkable words: they tagged a story on a Russian bank run, an
+  // oil-sanctions piece, and "Why Target Stock Keeps Going Up".
+  "liquidity", "monday", "tuesday", "wednesday", "thursday", "friday",
+  "saturday", "sunday", "strategy", "service", "services", "global",
   // Corporate filler that survives suffix stripping on its own.
   "technology", "solutions", "systems", "holdings", "group", "brands", "power",
   "capital", "growth", "value", "income", "select", "core", "quality",
