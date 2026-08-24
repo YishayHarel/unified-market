@@ -1,6 +1,9 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { HOUSE_RULES, ANALYSIS_CHECKLIST, DISCLAIMER, MODEL_FAST } from "../_shared/aiContract.ts";
+import { loadPortfolioContext, formatPortfolioContext } from "../_shared/portfolioContext.ts";
+import { checkSubscription, subscriptionRequiredResponse } from "../_shared/subscription.ts";
 
 // Rate limiting storage
 interface RateLimit {
@@ -96,6 +99,12 @@ serve(async (req) => {
 
     const userId = userData.user.id;
 
+    // Paid feature: verified before any token is spent.
+    const subscription = await checkSubscription(userData.user.email);
+    if (!subscription.subscribed) {
+      return subscriptionRequiredResponse(subscription, corsHeaders);
+    }
+
     // Rate limiting
     const rateCheck = checkRateLimit(userId);
     if (!rateCheck.allowed) {
@@ -134,23 +143,10 @@ serve(async (req) => {
 
     console.log(`[AI Stock Advisor] Processing message for user: ${userId.substring(0, 8)}...`);
 
-    // Fetch user context
-    const { data: savedStocks } = await supabase
-      .from('user_saved_stocks')
-      .select('symbol, name')
-      .eq('user_id', userId)
-      .limit(20);
-
-    const { data: holdings } = await supabase
-      .from('portfolio_holdings')
-      .select('symbol, company_name, shares, avg_cost, current_price, sector')
-      .eq('user_id', userId);
-
-    const { data: topStocks } = await supabase
-      .from('stocks')
-      .select('symbol, name, last_return_1d, market_cap')
-      .order('market_cap', { ascending: false, nullsFirst: false })
-      .limit(20);
+    // Portfolio, live prices, and headlines about the reader's own symbols.
+    // Previously this endpoint fetched holdings and then dropped cost basis and
+    // current price before prompting, so it could not discuss anyone's P&L.
+    const context = await loadPortfolioContext(supabase, userId);
 
     // Use OpenAI API
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
@@ -163,22 +159,17 @@ serve(async (req) => {
       );
     }
 
-    const systemPrompt = `You are YishAI, a helpful and knowledgeable stock market advisor. You provide personalized insights, analysis, and recommendations based on the user's portfolio and market data.
-
-Key behaviors:
-- Be conversational but professional
-- Provide actionable insights
-- Reference the user's actual holdings when relevant
-- Use current market data in your analysis
-- Be concise but thorough
-- Include relevant stock symbols when discussing companies
-- Warn about risks when appropriate
-
-User's Watchlist: ${JSON.stringify(savedStocks?.map(s => s.symbol) || [])}
-User's Portfolio Holdings: ${JSON.stringify(holdings?.map(h => ({ symbol: h.symbol, shares: h.shares, sector: h.sector })) || [])}
-Top Market Stocks: ${JSON.stringify(topStocks?.map(s => ({ symbol: s.symbol, name: s.name, change: s.last_return_1d })) || [])}
-
-Current date: ${new Date().toLocaleDateString()}`;
+    // Conversational endpoint, so prose rather than the JSON contract — but the
+    // same house rules and checklist as every other AI feature.
+    const systemPrompt = [
+      "You are YishAI, a stock market analyst for UnifiedMarket, talking with a reader about their own portfolio.",
+      HOUSE_RULES,
+      ANALYSIS_CHECKLIST,
+      "STYLE:\nConversational and direct. Lead with the specific figure that answers the question. Keep it under 250 words unless asked for more. Name stock symbols in capitals.",
+      `DATA (the only figures you may cite):\n${formatPortfolioContext(context)}`,
+      `Today is ${new Date().toISOString().slice(0, 10)}.`,
+      `Close with this exact line when you have given any analysis: "${DISCLAIMER}"`,
+    ].join("\n\n");
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -195,10 +186,12 @@ Current date: ${new Date().toLocaleDateString()}`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: MODEL_FAST,
         messages,
         max_tokens: 1000,
-        temperature: 0.7,
+        // Low, not zero: this is analysis over supplied figures, and higher
+        // temperatures make a model likelier to embellish beyond the data.
+        temperature: 0.3,
       }),
     });
 
