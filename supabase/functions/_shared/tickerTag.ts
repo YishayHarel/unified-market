@@ -15,27 +15,23 @@
 export interface StockRef {
   symbol: string;
   name: string | null;
+  /**
+   * Widely-followed listing. Only these are matched from a bare uppercase
+   * ticker, because that pattern is safe for AMD or UPS and disastrous across
+   * the whole universe.
+   */
+  is_top_100?: boolean | null;
 }
 
 export interface TickerMatcher {
   bySymbol: Map<string, string>;
   /** Normalised company name -> symbol, looked up by n-gram. */
   byName: Map<string, string>;
+  /** Symbols safe to match from a bare uppercase token. */
+  prominent: Set<string>;
   /** Longest name in words, bounding how many n-grams we generate. */
   maxNameWords: number;
 }
-
-/**
- * Uppercase tokens that are far more likely to be prose, an acronym, or a
- * country code than a ticker in a headline. Each is a real listed symbol.
- */
-const AMBIGUOUS_SYMBOLS = new Set([
-  "A", "ALL", "AN", "AND", "ANY", "ARE", "AS", "AT", "BE", "BIG", "BY", "CAR",
-  "CEO", "CFO", "DD", "DO", "EAT", "EU", "FOR", "FUN", "GO", "GOOD", "HAS",
-  "HE", "HOPE", "IT", "KEY", "LOVE", "NEW", "NEWS", "NOW", "OF", "ON", "ONE",
-  "OPEN", "OR", "OUT", "PLAY", "REAL", "RIDE", "RUN", "SAFE", "SAVE", "SO",
-  "TRUE", "TV", "UK", "US", "USA", "WELL", "WORK", "YOU",
-]);
 
 /** Corporate suffixes stripped before name matching. */
 const NAME_SUFFIX = new RegExp(
@@ -76,9 +72,20 @@ const GENERIC_LEAD_WORDS = new Set([
  * which is handled separately and needs no name match.
  */
 const AMBIGUOUS_NAMES = new Set([
+  // Brand names that are also everyday words.
   "target", "gap", "block", "match", "shell", "unity", "visa", "discover",
   "progressive", "principal", "travelers", "equity", "advance", "science",
   "sun", "arrow", "banner", "square", "peak", "journey", "range", "signature",
+  // Observed against live headlines: BILL Holdings matched "the bill",
+  // Universe Pharmaceuticals matched "universe", Next plc matched "next",
+  // Demand Brands matched "demand", Scott Technology matched a person's name.
+  "bill", "universe", "next", "demand", "giant", "critical", "scott", "test",
+  "technology", "solutions", "systems", "holdings", "group", "brands", "power",
+  "energy", "capital", "growth", "value", "income", "select", "core", "quality",
+  "momentum", "vision", "focus", "summit", "apex", "vertex", "origin", "impact",
+  "bridge", "anchor", "beacon", "compass", "catalyst", "spark", "surge", "wave",
+  "leap", "reach", "align", "assure", "secure", "trust", "future", "pioneer",
+  "venture", "legacy", "heritage", "prime", "elite", "select", "premier",
 ]);
 
 /**
@@ -119,12 +126,14 @@ function companyNeedles(name: string): string[] {
 export function buildMatcher(stocks: StockRef[]): TickerMatcher {
   const bySymbol = new Map<string, string>();
   const byName = new Map<string, string>();
+  const prominent = new Set<string>();
   let maxNameWords = 1;
 
   for (const stock of stocks) {
     const symbol = stock.symbol?.trim().toUpperCase();
     if (!symbol) continue;
     bySymbol.set(symbol, symbol);
+    if (stock.is_top_100) prominent.add(symbol);
 
     if (!stock.name) continue;
     for (const needle of companyNeedles(stock.name)) {
@@ -141,7 +150,7 @@ export function buildMatcher(stocks: StockRef[]): TickerMatcher {
     }
   }
 
-  return { bySymbol, byName, maxNameWords };
+  return { bySymbol, byName, prominent, maxNameWords };
 }
 
 export function extractTickers(text: string, matcher: TickerMatcher): string[] {
@@ -162,12 +171,13 @@ export function extractTickers(text: string, matcher: TickerMatcher): string[] {
     if (matcher.bySymbol.has(symbol)) found.add(symbol);
   }
 
-  // 2. Bare uppercase tokens, only when unambiguous: at least three characters
-  //    and not an everyday word.
-  for (const match of text.matchAll(/\b([A-Z]{3,6})\b/g)) {
-    const symbol = match[1];
-    if (AMBIGUOUS_SYMBOLS.has(symbol)) continue;
-    if (matcher.bySymbol.has(symbol)) found.add(symbol);
+  // 2. Bare uppercase tickers, but only for widely-followed names. Headlines
+  //    write "AMD" and "UPS" without decoration, so this is worth having — yet
+  //    across the whole universe ordinary acronyms collide with real symbols
+  //    (CBO, UPC, GDP, IPO, ETF all resolve to tickers), which tagged "Nvidia
+  //    is the beating heart of the AI boom" with four unrelated companies.
+  for (const match of text.matchAll(/\b([A-Z]{2,6})\b/g)) {
+    if (matcher.prominent.has(match[1])) found.add(match[1]);
   }
 
   // 3. Company names, which is how headlines usually refer to a company.

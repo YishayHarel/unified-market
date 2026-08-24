@@ -32,7 +32,11 @@ async function loadSymbolUniverse(
     const from = page * UNIVERSE_PAGE_SIZE;
     const { data, error } = await supabase
       .from("stocks")
-      .select("symbol, name")
+      .select("symbol, name, is_top_100")
+      // Pink sheets are 17k of the ~30k rows and the source of most bad tags:
+      // obscure shells and foreign lines whose names are ordinary words or
+      // people ("Scott Technology", "Demand Brands", "Giant Group").
+      .neq("exchange", "OOTC")
       .order("symbol", { ascending: true })
       .range(from, from + UNIVERSE_PAGE_SIZE - 1);
 
