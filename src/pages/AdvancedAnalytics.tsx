@@ -22,10 +22,13 @@ const AdvancedAnalytics = () => {
       </header>
       
       <Tabs defaultValue="analytics" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 md:grid-cols-8">
+        <TabsList className="grid w-full grid-cols-3 md:grid-cols-9">
           <TabsTrigger value="brief">Daily Brief</TabsTrigger>
           <TabsTrigger value="ai-screener">AI Screener</TabsTrigger>
           <TabsTrigger value="risk">Risk AI</TabsTrigger>
+          {/* The portfolio panel already existed but had no trigger, so it
+              could never be opened. */}
+          <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="screener">Screener</TabsTrigger>
           <TabsTrigger value="technicals">Technicals</TabsTrigger>
