@@ -124,7 +124,44 @@ async function fetchVIX(): Promise<{ value: number; change: number } | null> {
   return null;
 }
 
-// Fetch Treasury yields from Alpha Vantage
+/**
+ * Treasury yields, FRED first.
+ *
+ * This used Alpha Vantage alone, whose free tier allows 25 requests a day —
+ * shared with the chart endpoints, so a brief run each morning could find the
+ * quota already spent. FRED is the Federal Reserve's own series, free and
+ * effectively unmetered, and get-treasury-vix already prefers it. Alpha Vantage
+ * stays as the fallback.
+ */
+const FRED_SERIES: Record<string, string> = { '2year': 'DGS2', '10year': 'DGS10' };
+
+async function fetchTreasuryFromFred(
+  maturity: string,
+  fredKey: string,
+): Promise<{ value: number; change: number } | null> {
+  const seriesId = FRED_SERIES[maturity];
+  if (!seriesId || !fredKey) return null;
+
+  try {
+    const res = await fetch(
+      `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}` +
+        `&api_key=${fredKey}&file_type=json&sort_order=desc&limit=10`,
+    );
+    if (!res.ok) return null;
+
+    // FRED writes "." for non-trading days; drop them before pairing.
+    const points = ((await res.json())?.observations ?? [])
+      .map((o: { value: string }) => parseFloat(o.value))
+      .filter((v: number) => Number.isFinite(v));
+
+    if (points.length < 2) return null;
+    return { value: points[0], change: points[0] - points[1] };
+  } catch {
+    return null;
+  }
+}
+
+// Fetch Treasury yields from Alpha Vantage (fallback)
 async function fetchTreasuryYield(maturity: string, apiKey: string): Promise<{ value: number; change: number } | null> {
   try {
     const url = `https://www.alphavantage.co/query?function=TREASURY_YIELD&interval=daily&maturity=${maturity}&apikey=${apiKey}`;
@@ -253,6 +290,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY') || '';
+    const fredKey = Deno.env.get('FRED_API_KEY') || '';
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // The user is taken from the verified token, never from the request body.
@@ -300,8 +338,8 @@ serve(async (req) => {
     ] = await Promise.all([
       fetchYahooFutures(),
       fetchVIX(),
-      fetchTreasuryYield('2year', alphaVantageKey),
-      fetchTreasuryYield('10year', alphaVantageKey),
+      fetchTreasuryFromFred('2year', fredKey).then((r) => r ?? fetchTreasuryYield('2year', alphaVantageKey)),
+      fetchTreasuryFromFred('10year', fredKey).then((r) => r ?? fetchTreasuryYield('10year', alphaVantageKey)),
       supabase.from('user_saved_stocks').select('symbol, name').eq('user_id', userId),
       supabase.from('portfolio_holdings').select('symbol, company_name, shares, avg_cost, current_price, sector').eq('user_id', userId),
       supabase.from('stocks').select('symbol, name, last_return_1d, rel_volume').order('last_return_1d', { ascending: false }).limit(5),

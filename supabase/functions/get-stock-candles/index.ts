@@ -87,6 +87,67 @@ function getPeriodParams(period: string): {
 }
 
 /**
+ * Yahoo chart data — free, keyless, and not rate limited.
+ *
+ * Placed ahead of the paid providers because the alternatives are all
+ * constrained: Finnhub's candle endpoint answers 403 on this plan (hence the
+ * backoff below), Twelve Data was never configured, and Alpha Vantage's free
+ * tier allows 25 requests a day, which cannot serve a chart on a live site.
+ */
+function yahooRangeParams(period: string): { range: string; interval: string } {
+  switch (period) {
+    case '1H':
+    case '1D': return { range: '1d', interval: '5m' };
+    case '1W': return { range: '5d', interval: '60m' };
+    case '1M': return { range: '1mo', interval: '1d' };
+    case '3M': return { range: '3mo', interval: '1d' };
+    case '1Y': return { range: '1y', interval: '1d' };
+    case 'MAX': return { range: '5y', interval: '1wk' };
+    default: return { range: '1mo', interval: '1d' };
+  }
+}
+
+async function fetchYahooCandles(symbol: string, period: string): Promise<any> {
+  const { range, interval } = yahooRangeParams(period);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+        `?range=${range}&interval=${interval}`,
+      {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; UnifiedMarket/1.0)' },
+      },
+    );
+    if (!res.ok) return null;
+
+    const result = (await res.json())?.chart?.result?.[0];
+    const timestamps: number[] = result?.timestamp ?? [];
+    const quote = result?.indicators?.quote?.[0];
+    if (!timestamps.length || !quote) return null;
+
+    const candles = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const [o, h, l, c] = [quote.open?.[i], quote.high?.[i], quote.low?.[i], quote.close?.[i]];
+      // Yahoo pads holidays and halts with nulls.
+      if ([o, h, l, c].some((v) => v == null)) continue;
+      candles.push({
+        timestamp: timestamps[i] * 1000,
+        open: o, high: h, low: l, close: c,
+        volume: quote.volume?.[i] ?? null,
+      });
+    }
+    return candles.length >= 2 ? candles : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Fetch candle data from Finnhub
  */
 async function fetchFinnhubCandles(
@@ -477,9 +538,8 @@ serve(async (req) => {
     const has12 = getTwelveDataKeys().length > 0
     const hasAv = getAlphaVantageKeys().length > 0
 
-    if (!hasFh && !has12 && !hasAv) {
-      throw new Error('No market data API keys configured (FINNHUB_API_KEY/FINNHUB_API_KEYS, TWELVE_DATA_*, ALPHA_VANTAGE_*)');
-    }
+    // No key check here any more: Yahoo needs none, so charts work even with
+    // every paid provider unconfigured.
 
     const cacheKey = `${normalizedSymbol}-${period}`;
     let candles = getCached(cacheKey);
@@ -496,13 +556,20 @@ serve(async (req) => {
       ];
       const isEtf = etfSymbols.includes(normalizedSymbol);
 
+      // Free and unmetered, so it runs first for every symbol — including the
+      // ETFs the block below routes around Finnhub for.
+      candles = await fetchYahooCandles(normalizedSymbol, period);
+      if (candles) console.log(`Yahoo served candles for ${normalizedSymbol}`);
+
       const avKeyEtf = nextAlphaVantageKey()
       const tdKeyEtf = nextTwelveDataKey()
       const fhKey1 = nextFinnhubKey()
       const tdKey1 = nextTwelveDataKey()
       const avKey1 = nextAlphaVantageKey()
 
-      if (isEtf && avKeyEtf) {
+      if (candles) {
+        // Yahoo already answered; skip the metered providers entirely.
+      } else if (isEtf && avKeyEtf) {
         // PRIMARY for ETFs: Alpha Vantage (Finnhub returns 403, Twelve Data has tight rate limits)
         console.log(`Using Alpha Vantage as primary for ETF: ${normalizedSymbol}`);
         const avOutputsize = fromDays > 100 ? 'full' : 'compact';

@@ -13,6 +13,20 @@ import {
   type Article,
 } from "../_shared/rssNews.ts"
 
+import {
+  checkRateLimit,
+  createRateLimitResponse,
+  getClientIdentifier,
+  RATE_LIMIT_TIERS,
+} from "../_shared/rate-limit.ts"
+
+/**
+ * Ingest runs every 15 minutes and the feeds carry hundreds of stories a day,
+ * so nothing newer than this means the pipeline has stopped rather than the
+ * news having gone quiet.
+ */
+const STALE_AFTER_HOURS = 6;
+
 interface NewsRow {
   url: string;
   title: string;
@@ -24,12 +38,6 @@ interface NewsRow {
   bull_count: number | null;
   bear_count: number | null;
 }
-import {
-  checkRateLimit,
-  createRateLimitResponse,
-  getClientIdentifier,
-  RATE_LIMIT_TIERS,
-} from "../_shared/rate-limit.ts"
 
 const FINNHUB_TIMEOUT_MS = 8000;
 
@@ -230,9 +238,31 @@ serve(async (req) => {
     // ingest, or if it has stalled), so news never simply disappears.
     const cached = await readCachedNews(sanitizedSymbol, validPageSize, watchlist);
     if (cached.length > 0) {
+      // If ingest stalls the cache keeps serving, and yesterday's headlines look
+      // current because nothing says otherwise. Report the age of the newest
+      // article so the client can flag a stale feed instead of quietly
+      // presenting old news as today's.
+      const newest = cached.reduce(
+        (max, a) => Math.max(max, Date.parse(a.publishedAt) || 0),
+        0,
+      );
+      const ageHours = newest > 0 ? (Date.now() - newest) / 3_600_000 : null;
+      // General news refills continuously; a symbol may legitimately have no
+      // fresh coverage, so only the general feed is judged stale on age.
+      const stale = !sanitizedSymbol && ageHours != null && ageHours > STALE_AFTER_HOURS;
+      if (stale) {
+        console.warn(`News cache is stale — newest article is ${ageHours!.toFixed(1)}h old`);
+      }
+
       console.log(`Served ${cached.length} articles from cache`);
       return new Response(
-        JSON.stringify({ articles: cached, status: 'ok', source: 'cache' }),
+        JSON.stringify({
+          articles: cached,
+          status: 'ok',
+          source: 'cache',
+          newestAgeHours: ageHours == null ? null : Number(ageHours.toFixed(1)),
+          stale,
+        }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'max-age=120' },
           status: 200,
