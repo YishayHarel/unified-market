@@ -29,6 +29,16 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // These endpoints write shared market data and spend provider quota, and
+  // previously accepted any caller. Restricted to the scheduler.
+  const cronSecret = Deno.env.get('CRON_SECRET');
+  if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {
+    return new Response(
+      JSON.stringify({ error: 'unauthorized' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
   try {
     console.log('Starting stock price update job...');
     

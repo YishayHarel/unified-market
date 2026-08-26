@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { checkSubscription, subscriptionRequiredResponse } from "../_shared/subscription.ts";
 
 // CORS configuration - restrict to allowed origins
 const ALLOWED_ORIGINS = [
@@ -60,6 +61,12 @@ serve(async (req) => {
       });
     }
 
+    // Paid feature: verified before any token is spent.
+    const subscription = await checkSubscription(userData.user.email);
+    if (!subscription.subscribed) {
+      return subscriptionRequiredResponse(subscription, corsHeaders);
+    }
+
     const { data: usageAllowed, error: usageError } = await supabase.rpc('check_ai_usage', {
       p_user_id: userData.user.id,
       p_daily_limit: AI_NEWS_SUMMARY_DAILY_LIMIT
@@ -78,20 +85,65 @@ serve(async (req) => {
       });
     }
 
-    const { articles } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const requestedSymbols: string[] = Array.isArray(body.symbols)
+      ? body.symbols
+          .map((s: unknown) => String(s).replace(/[^A-Za-z0-9.]/g, '').toUpperCase().slice(0, 10))
+          .filter(Boolean)
+          .slice(0, 25)
+      : [];
 
-    if (!articles || articles.length === 0) {
-      return new Response(JSON.stringify({ error: 'No articles provided' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    // Read the ingest cache rather than trusting articles posted by the client.
+    // The caller previously supplied the article list, so the summary covered
+    // whatever the client chose to send and could be fed arbitrary text. Reading
+    // server-side also means the summary can be scoped to the reader's own
+    // holdings, using the ticker tags attached at ingest.
+    const userId = userData.user.id;
+    let symbols = requestedSymbols;
+    if (symbols.length === 0) {
+      const [holdings, saved] = await Promise.all([
+        supabase.from('portfolio_holdings').select('symbol').eq('user_id', userId),
+        supabase.from('user_saved_stocks').select('symbol').eq('user_id', userId).limit(25),
+      ]);
+      symbols = [
+        ...new Set([
+          ...(holdings.data ?? []).map((r: { symbol: string }) => r.symbol),
+          ...(saved.data ?? []).map((r: { symbol: string }) => r.symbol),
+        ]),
+      ].slice(0, 25);
+    }
+
+    let articleQuery = supabase
+      .from('news_articles')
+      .select('title, description, source, published_at, tickers')
+      .order('published_at', { ascending: false })
+      .limit(12);
+
+    // With no symbols to scope by, summarise the general feed instead of
+    // returning nothing.
+    if (symbols.length > 0) articleQuery = articleQuery.overlaps('tickers', symbols);
+
+    const { data: cachedArticles } = await articleQuery;
+    const articles = cachedArticles ?? [];
+
+    if (articles.length === 0) {
+      return new Response(
+        JSON.stringify({
+          error: symbols.length > 0
+            ? 'No recent headlines mention your holdings.'
+            : 'No headlines available to summarise.',
+        }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     
     // Prepare articles for summarization
-    const articlesText = articles.slice(0, 10).map((article, index) => 
-      `Article ${index + 1}: ${article.title}\n${article.description || ''}\n---`
+    const articlesText = articles.map((article, index) =>
+      `Article ${index + 1} [${(article.tickers ?? []).join(',') || 'no ticker'}] ` +
+      `(${article.source}, ${String(article.published_at).slice(0, 10)}): ` +
+      `${article.title}\n${article.description || ''}\n---`
     ).join('\n');
 
     const prompt = `

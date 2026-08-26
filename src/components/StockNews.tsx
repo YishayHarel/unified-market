@@ -34,25 +34,26 @@ const StockNews = ({ symbol, companyName }: StockNewsProps) => {
       let data: any = null;
       let fetchError: any = null;
 
+      // Edge first for per-symbol news, unlike the rest of the app: only this
+      // path reads the ingest cache, so it is the one that returns ticker tags
+      // and Bull/Bear tallies. It falls back to live sources internally, so an
+      // empty cache still yields articles.
       try {
-        data = await fetchNewsFromBackend({
-          symbol,
-          pageSize: 10,
+        const edge = await supabase.functions.invoke('get-news', {
+          body: { symbol, companyName, pageSize: 10 },
         });
-      } catch (backendError) {
-        console.warn("Express backend unavailable for stock news, falling back to Supabase");
-        if (backendError instanceof Error) {
-          console.warn("Backend stock news error:", backendError.message);
+        if (edge.error) throw edge.error;
+        data = edge.data;
+      } catch (edgeError) {
+        console.warn("Edge news unavailable for stock news, falling back to Express");
+        if (edgeError instanceof Error) {
+          console.warn("Edge news error:", edgeError.message);
         }
-        const fallback = await supabase.functions.invoke('get-news', {
-          body: { 
-            symbol,
-            companyName,
-            pageSize: 10 
-          }
-        });
-        data = fallback.data;
-        fetchError = fallback.error;
+        try {
+          data = await fetchNewsFromBackend({ symbol, pageSize: 10 });
+        } catch (backendError) {
+          fetchError = backendError;
+        }
       }
 
       if (fetchError) throw fetchError;

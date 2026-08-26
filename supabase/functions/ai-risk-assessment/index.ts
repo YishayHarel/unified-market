@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { checkSubscription, subscriptionRequiredResponse } from "../_shared/subscription.ts";
 
 // CORS configuration - restrict to allowed origins
 const ALLOWED_ORIGINS = [
@@ -95,6 +96,12 @@ serve(async (req) => {
         JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' } }
       );
+    }
+
+    // Paid feature: verified before any token is spent.
+    const subscription = await checkSubscription(userData.user.email);
+    if (!subscription.subscribed) {
+      return subscriptionRequiredResponse(subscription, corsHeaders);
     }
 
     const { data: usageAllowed, error: usageError } = await supabase.rpc('check_ai_usage', {

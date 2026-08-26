@@ -3,6 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
 // CORS configuration - restrict to allowed origins
 const ALLOWED_ORIGINS = [
+  // The production origin was absent, so browser calls to this function failed
+  // CORS on the live site and only ever worked from a developer machine.
+  'https://unified-market.vercel.app',
   'http://localhost:8080',
   'http://localhost:5173'
 ];
