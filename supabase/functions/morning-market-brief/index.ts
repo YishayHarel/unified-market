@@ -1,9 +1,15 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { HOUSE_RULES, MODEL_DEEP, parseJsonResponse, missingFields } from "../_shared/aiContract.ts";
+import { gapStatsForSymbol, describeGapStats } from "../_shared/marketStats.ts";
+import { checkSubscription, subscriptionRequiredResponse } from "../_shared/subscription.ts";
 
-// CORS configuration - restrict to allowed origins
+// CORS configuration - restrict to allowed origins.
+// The production origin was missing, so this endpoint only ever worked from a
+// developer's machine.
 const ALLOWED_ORIGINS = [
+  'https://unified-market.vercel.app',
   'http://localhost:8080',
   'http://localhost:5173'
 ];
@@ -150,73 +156,82 @@ async function fetchTreasuryYield(maturity: string, apiKey: string): Promise<{ v
 }
 
 // Get sentiment tier based on market conditions
-function getSentimentTier(futures: FuturesData[], vix: { value: number; change: number } | null): { 
-  sentiment: string; 
-  confidence: number;
-  direction: string;
-  action: string;
-} {
-  // Calculate average futures change
-  const avgFuturesChange = futures.length > 0 
-    ? futures.reduce((sum, f) => sum + f.changePercent, 0) / futures.length 
+/** Per-holding history costs a Yahoo round trip each; keep the brief quick. */
+const MAX_HOLDINGS_ANALYSED = 6;
+
+/**
+ * How far a symbol is indicated from yesterday's close right now.
+ *
+ * Reads the pre/post series, so before the bell the last point is the
+ * pre-market print and this is the indicated opening gap. The figure is only
+ * meaningful pre-open — run intraday it measures the session move instead,
+ * which is why this brief is scheduled before the open.
+ */
+async function indicatedGapPct(symbol: string): Promise<number | null> {
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+        `?includePrePost=true&interval=1m&range=1d`,
+      { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; UnifiedMarket/1.0)' } },
+    );
+    if (!res.ok) return null;
+
+    const result = (await res.json())?.chart?.result?.[0];
+    const previousClose = result?.meta?.previousClose;
+    const closes: (number | null)[] = result?.indicators?.quote?.[0]?.close ?? [];
+    if (!previousClose) return null;
+
+    // Thin pre-market tape leaves gaps in the series; walk back to the last print.
+    for (let i = closes.length - 1; i >= 0; i--) {
+      const price = closes[i];
+      if (price != null && price > 0) return (price / previousClose - 1) * 100;
+    }
+
+    const last = result?.meta?.regularMarketPrice;
+    return last ? (last / previousClose - 1) * 100 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Classifies the pre-open tape from futures and volatility.
+ *
+ * This replaces a version that produced a "confidence" percentage from
+ * `50 + Math.random() * 10` for a flat tape and from invented arithmetic
+ * elsewhere, then attached hardcoded advice ("Consider buying on dips").
+ * A number shown to someone deciding what to do with their money has to mean
+ * something, so the tier here is a plain description of the tape and the only
+ * percentage in the brief now comes from counted history.
+ */
+function classifyTape(
+  futures: FuturesData[],
+  vix: { value: number; change: number } | null,
+): { tier: string; avgFuturesChangePct: number; volatilityNote: string } {
+  const avgFuturesChangePct = futures.length > 0
+    ? futures.reduce((sum, f) => sum + f.changePercent, 0) / futures.length
     : 0;
-  
-  // VIX interpretation (higher = more fear)
-  const vixLevel = vix?.value || 20;
-  const vixChange = vix?.change || 0;
-  
-  // Determine sentiment tier
-  let sentiment: string;
-  let confidence: number;
-  let direction: string;
-  let action: string;
-  
-  if (avgFuturesChange > 1.5) {
-    sentiment = 'Very Bullish';
-    confidence = Math.min(95, 70 + Math.abs(avgFuturesChange) * 10);
-    direction = 'Strong upward momentum expected';
-    action = 'Consider buying on dips';
-  } else if (avgFuturesChange > 0.7) {
-    sentiment = 'Bullish';
-    confidence = Math.min(90, 60 + Math.abs(avgFuturesChange) * 10);
-    direction = 'Market trending higher';
-    action = 'Hold positions, consider adding';
-  } else if (avgFuturesChange > 0.2) {
-    sentiment = 'Slightly Bullish';
-    confidence = Math.min(80, 55 + Math.abs(avgFuturesChange) * 10);
-    direction = 'Modest upside expected';
-    action = 'Hold current positions';
-  } else if (avgFuturesChange >= -0.2) {
-    sentiment = 'Neutral';
-    confidence = 50 + Math.random() * 10;
-    direction = 'Sideways trading expected';
-    action = 'Wait for clearer signals';
-  } else if (avgFuturesChange > -0.7) {
-    sentiment = 'Slightly Bearish';
-    confidence = Math.min(80, 55 + Math.abs(avgFuturesChange) * 10);
-    direction = 'Minor downside pressure';
-    action = 'Consider defensive positions';
-  } else if (avgFuturesChange > -1.5) {
-    sentiment = 'Bearish';
-    confidence = Math.min(90, 60 + Math.abs(avgFuturesChange) * 10);
-    direction = 'Market trending lower';
-    action = 'Consider reducing exposure';
-  } else {
-    sentiment = 'Very Bearish';
-    confidence = Math.min(95, 70 + Math.abs(avgFuturesChange) * 10);
-    direction = 'Strong downward pressure';
-    action = 'Consider selling or hedging';
-  }
-  
-  // Adjust for VIX
-  if (vixLevel > 30 && vixChange > 2) {
-    confidence = Math.max(confidence - 10, 40);
-    action = 'High volatility - trade with caution';
-  } else if (vixLevel < 15) {
-    confidence = Math.min(confidence + 5, 95);
-  }
-  
-  return { sentiment, confidence: Math.round(confidence), direction, action };
+
+  // Descriptive bands only — these say what the tape is doing, not what it
+  // will do next.
+  const tier =
+    avgFuturesChangePct > 1.5 ? 'Sharply higher'
+    : avgFuturesChangePct > 0.7 ? 'Higher'
+    : avgFuturesChangePct > 0.2 ? 'Modestly higher'
+    : avgFuturesChangePct >= -0.2 ? 'Flat'
+    : avgFuturesChangePct > -0.7 ? 'Modestly lower'
+    : avgFuturesChangePct > -1.5 ? 'Lower'
+    : 'Sharply lower';
+
+  const level = vix?.value ?? null;
+  const change = vix?.change ?? 0;
+  const volatilityNote =
+    level == null ? 'VIX unavailable.'
+    : level > 30 ? `VIX ${level.toFixed(1)} (${change >= 0 ? '+' : ''}${change.toFixed(1)}) — elevated; wider ranges than usual.`
+    : level > 20 ? `VIX ${level.toFixed(1)} (${change >= 0 ? '+' : ''}${change.toFixed(1)}) — above average.`
+    : `VIX ${level.toFixed(1)} (${change >= 0 ? '+' : ''}${change.toFixed(1)}) — subdued.`;
+
+  return { tier, avgFuturesChangePct, volatilityNote };
 }
 
 serve(async (req) => {
@@ -235,21 +250,42 @@ serve(async (req) => {
   }
 
   try {
-    const { userId } = await req.json();
-    
-    if (!userId) {
-      return new Response(
-        JSON.stringify({ error: 'User ID is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log(`[Morning Brief] Generating brief for user: ${userId}`);
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY') || '';
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // The user is taken from the verified token, never from the request body.
+    // This previously read `userId` straight out of the JSON payload with no
+    // auth at all, so any caller could name any user's id and receive that
+    // person's holdings, cost basis and watchlist.
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Authentication required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { data: userData, error: authError } = await supabase.auth.getUser(
+      authHeader.replace('Bearer ', ''),
+    );
+    if (authError || !userData.user) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid authentication' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const userId = userData.user.id;
+
+    // Paid feature: checked before any token is spent.
+    const subscription = await checkSubscription(userData.user.email);
+    if (!subscription.subscribed) {
+      return subscriptionRequiredResponse(subscription, corsHeaders);
+    }
+
+    console.log(`[Morning Brief] Generating brief for user: ${userId.slice(0, 8)}…`);
 
     // Fetch all data in parallel
     const [
@@ -283,7 +319,28 @@ serve(async (req) => {
       : null;
 
     // Get market sentiment
-    const marketSentiment = getSentimentTier(futuresData, vixData);
+    const tape = classifyTape(futuresData, vixData);
+
+    // Historical base rates for a tape like this one, and for each holding's
+    // indicated gap. Every percentage the reader sees originates here, not from
+    // the model. SPY stands in for the index because its bars carry the actual
+    // realised open, which is what a futures level is a forecast of.
+    const [indexStats, holdingStats] = await Promise.all([
+      gapStatsForSymbol('SPY', tape.avgFuturesChangePct, '5y'),
+      Promise.all(
+        holdings.slice(0, MAX_HOLDINGS_ANALYSED).map(async (holding: { symbol: string }) => {
+          const gapPct = await indicatedGapPct(holding.symbol);
+          if (gapPct == null) return { symbol: holding.symbol, line: null };
+          const stats = await gapStatsForSymbol(holding.symbol, gapPct, '5y');
+          return { symbol: holding.symbol, line: describeGapStats(holding.symbol, gapPct, stats) };
+        }),
+      ),
+    ]);
+
+    const baseRateLines = [
+      describeGapStats('S&P 500 (via SPY)', tape.avgFuturesChangePct, indexStats),
+      ...holdingStats.map((h) => h.line).filter(Boolean),
+    ].join('\n');
 
     // Calculate portfolio stats
     let portfolioStats = null;
@@ -298,6 +355,22 @@ serve(async (req) => {
         holdingsCount: holdings.length
       };
     }
+
+    // Only the holdings the brief actually covers, so the model is not tempted
+    // to comment on positions it has no base rate for.
+    const portfolioSummary = holdings.length === 0
+      ? 'No holdings.'
+      : [
+          `${holdings.length} positions, total value $${(portfolioStats?.totalValue ?? 0).toFixed(2)}, ` +
+            `unrealised ${portfolioStats?.gainLossPercent ?? '0'}%.`,
+          ...holdings.slice(0, MAX_HOLDINGS_ANALYSED).map((h) =>
+            `- ${h.symbol}: ${h.shares} shares, avg cost $${Number(h.avg_cost).toFixed(2)}` +
+              `${h.sector ? `, ${h.sector}` : ''}`
+          ),
+          holdings.length > MAX_HOLDINGS_ANALYSED
+            ? `(${holdings.length - MAX_HOLDINGS_ANALYSED} further positions not covered this morning.)`
+            : '',
+        ].filter(Boolean).join('\n');
 
     // Prepare market data summary
     const marketData: MarketData = {
@@ -326,91 +399,55 @@ serve(async (req) => {
       day: 'numeric' 
     });
 
-    const systemPrompt = `You are a professional market analyst providing the Morning Market Brief at 8:30 AM ET, before market open.
+    const systemPrompt = [
+      "You are YishAI writing the Morning Market Brief, published before the US open.",
+      HOUSE_RULES,
+      `TASK:
+Write a brief a reader can absorb in under thirty seconds. Be specific and
+plain. No filler, no hedged throat-clearing, no restating the data back.
 
-Your analysis must include:
-1. Pre-market summary with futures, VIX, and Treasury analysis
-2. 30-minute opening direction prediction (where market should head in first 30 min)
-3. Overall market sentiment using the 7-tier scale with confidence %
-4. Individual stock predictions for each stock the user owns (if any)
+The BASE RATES section contains percentages counted from historical daily bars.
+They are the only percentages that exist. Quote them as given. You may set an
+"adjusted" number when a concrete factor in the data justifies moving off the
+base rate — but you must name that factor, and you must keep the base rate
+visible alongside it. If nothing justifies an adjustment, repeat the base rate
+and say the tape offers no reason to deviate.
 
-IMPORTANT RULES:
-- Use the 7-tier sentiment scale: Very Bullish, Bullish, Slightly Bullish, Neutral, Slightly Bearish, Bearish, Very Bearish
-- Always include a confidence percentage (0-100%)
-- For the 30-minute prediction, give a clear BUY, SELL, or HOLD recommendation
-- For each owned stock, provide a specific prediction with sentiment and confidence %
-- Be concise but informative
-- Focus on actionable insights
-
-Return valid JSON in this EXACT format:
+Never recommend buying, selling, or holding.`,
+      `RESPONSE FORMAT:
+JSON only, no markdown fence, matching exactly:
 {
-  "greeting": "Good morning! Here's your Morning Market Brief for [date]",
-  "generatedTime": "8:30 AM ET",
-  "preMarketSummary": {
-    "headline": "Brief 1-line market headline",
-    "futuresAnalysis": "Analysis of futures movement",
-    "vixAnalysis": "What VIX level means for today",
-    "treasuryAnalysis": "Yield curve interpretation"
+  "headline": "one sentence, under 15 words, what matters this morning",
+  "tape": "one or two sentences on futures, volatility and yields together",
+  "openOdds": {
+    "baseRatePct": 0,
+    "adjustedPct": 0,
+    "basis": "one sentence naming the sample behind the base rate",
+    "adjustment": "one sentence naming what moved it, or why nothing did"
   },
-  "marketSentiment": {
-    "tier": "Bullish",
-    "confidence": 75,
-    "reasoning": "Brief explanation"
-  },
-  "thirtyMinutePrediction": {
-    "direction": "UP" | "DOWN" | "FLAT",
-    "confidence": 70,
-    "action": "BUY" | "SELL" | "HOLD",
-    "reasoning": "Why we expect this direction"
-  },
-  "stockPredictions": [
-    {
-      "symbol": "AAPL",
-      "companyName": "Apple Inc",
-      "sentiment": "Slightly Bullish",
-      "confidence": 65,
-      "priceTarget": "Expected to open +0.5% to +1%",
-      "reasoning": "Brief reasoning",
-      "action": "HOLD"
-    }
+  "holdings": [
+    { "symbol": "TICK", "note": "one sentence: indicated move plus its base rate" }
   ],
-  "keyWatchPoints": ["Watch point 1", "Watch point 2"],
-  "riskFactors": ["Risk 1", "Risk 2"],
-  "closingAdvice": "Brief closing advice"
-}`;
+  "watch": ["at most three short items"],
+  "risk": "one sentence on the main thing that could go wrong"
+}`,
+    ].join("\n\n");
 
-    const userPrompt = `Generate a Morning Market Brief for ${today}.
+    const userPrompt = `Morning Market Brief for ${today}.
 
-CURRENT MARKET DATA:
-Futures:
-${JSON.stringify(futuresData, null, 2)}
+TAPE:
+Futures: ${futuresData.map((f) => `${f.name} ${f.changePercent >= 0 ? '+' : ''}${f.changePercent.toFixed(2)}%`).join(', ') || 'unavailable'}
+Direction: ${tape.tier} (average futures move ${tape.avgFuturesChangePct >= 0 ? '+' : ''}${tape.avgFuturesChangePct.toFixed(2)}%)
+Volatility: ${tape.volatilityNote}
+Treasuries: 2Y ${treasury2Y ? `${treasury2Y.value.toFixed(2)}% (${treasury2Y.change >= 0 ? '+' : ''}${treasury2Y.change.toFixed(3)})` : 'n/a'}, 10Y ${treasury10Y ? `${treasury10Y.value.toFixed(2)}% (${treasury10Y.change >= 0 ? '+' : ''}${treasury10Y.change.toFixed(3)})` : 'n/a'}, 10Y-2Y spread ${yieldSpread !== null ? `${yieldSpread.toFixed(2)}%` : 'n/a'}
 
-VIX: ${vixData ? `${vixData.value.toFixed(2)} (${vixData.change >= 0 ? '+' : ''}${vixData.change.toFixed(2)})` : 'N/A'}
+BASE RATES (counted from historical daily bars — the only percentages available):
+${baseRateLines}
 
-Treasury Yields:
-- 2-Year: ${treasury2Y ? `${treasury2Y.value.toFixed(2)}% (${treasury2Y.change >= 0 ? '+' : ''}${treasury2Y.change.toFixed(3)}%)` : 'N/A'}
-- 10-Year: ${treasury10Y ? `${treasury10Y.value.toFixed(2)}% (${treasury10Y.change >= 0 ? '+' : ''}${treasury10Y.change.toFixed(3)}%)` : 'N/A'}
-- Yield Spread (10Y-2Y): ${yieldSpread !== null ? `${yieldSpread.toFixed(2)}%` : 'N/A'}
+READER'S PORTFOLIO:
+${portfolioSummary}
 
-USER'S PORTFOLIO (${holdings.length} holdings):
-${holdings.length > 0 ? JSON.stringify(holdings, null, 2) : 'No holdings'}
-
-Portfolio Stats: ${portfolioStats ? JSON.stringify(portfolioStats) : 'N/A'}
-
-USER'S WATCHLIST (${savedStocks.length} stocks):
-${JSON.stringify(savedStocks, null, 2)}
-
-TODAY'S TOP MOVERS:
-${JSON.stringify(topMovers, null, 2)}
-
-TODAY'S BOTTOM MOVERS:
-${JSON.stringify(bottomMovers, null, 2)}
-
-${holdings.length > 0 ? `
-IMPORTANT: The user owns ${holdings.length} stocks. You MUST include a prediction for EACH stock they own in the stockPredictions array with sentiment, confidence %, and action (BUY/SELL/HOLD).
-` : 'The user has no stock holdings, so skip the stockPredictions section.'}
-
-Provide a comprehensive Morning Market Brief.`;
+Write the brief.`;
 
     console.log('[Morning Brief] Calling OpenAI API...');
 
@@ -421,12 +458,12 @@ Provide a comprehensive Morning Market Brief.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: MODEL_DEEP,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        max_tokens: 2500,
+        max_tokens: 900,
         temperature: 0.3,
       }),
     });
@@ -462,18 +499,22 @@ Provide a comprehensive Morning Market Brief.`;
     // Parse AI response
     let result;
     try {
-      let cleanContent = content.trim();
-      if (cleanContent.startsWith('```json')) cleanContent = cleanContent.slice(7);
-      if (cleanContent.startsWith('```')) cleanContent = cleanContent.slice(3);
-      if (cleanContent.endsWith('```')) cleanContent = cleanContent.slice(0, -3);
-      result = JSON.parse(cleanContent.trim());
+      result = parseJsonResponse<Record<string, unknown>>(content);
+      const missing = missingFields(result, ['headline', 'tape', 'openOdds']);
+      if (missing.length > 0) {
+        throw new Error(`Model response missing: ${missing.join(', ')}`);
+      }
     } catch (parseError) {
-      console.error('[Morning Brief] Failed to parse AI response:', content);
-      // Return fallback with raw market data
+      console.error('[Morning Brief] Invalid model response:', parseError);
+      // Degrade to the computed layer rather than showing unvalidated model
+      // prose. The statistics were counted from real bars, so they stand on
+      // their own without the narration.
       result = {
-        greeting: `Good morning! Here's your Morning Market Brief for ${today}`,
-        error: 'Failed to generate full analysis',
-        rawSummary: content
+        headline: `${tape.tier} into the open.`,
+        tape: `${tape.tier}. ${tape.volatilityNote}`,
+        openOdds: null,
+        baseRatesOnly: true,
+        note: 'Narration unavailable this morning; figures below are computed from historical bars.',
       };
     }
 
@@ -481,7 +522,8 @@ Provide a comprehensive Morning Market Brief.`;
     result.generatedAt = new Date().toISOString();
     result.marketData = marketData;
     result.portfolioStats = portfolioStats;
-    result.calculatedSentiment = marketSentiment;
+    result.tape = tape;
+    result.baseRates = baseRateLines;
 
     console.log('[Morning Brief] Brief generated successfully');
 
