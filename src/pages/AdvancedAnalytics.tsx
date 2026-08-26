@@ -11,7 +11,6 @@ import VolumeProfile from "@/components/analytics/VolumeProfile";
 import TechnicalIndicators from "@/components/analytics/TechnicalIndicators";
 import AIScreener from "@/components/ai/AIScreener";
 import AIRiskAssessment from "@/components/ai/AIRiskAssessment";
-import AIDailyBrief from "@/components/ai/AIDailyBrief";
 
 const AdvancedAnalytics = () => {
   return (
@@ -22,8 +21,7 @@ const AdvancedAnalytics = () => {
       </header>
       
       <Tabs defaultValue="analytics" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 md:grid-cols-9">
-          <TabsTrigger value="brief">Daily Brief</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3 md:grid-cols-8">
           <TabsTrigger value="ai-screener">AI Screener</TabsTrigger>
           <TabsTrigger value="risk">Risk AI</TabsTrigger>
           {/* The portfolio panel already existed but had no trigger, so it
@@ -35,10 +33,6 @@ const AdvancedAnalytics = () => {
           <TabsTrigger value="sentiment">Sentiment</TabsTrigger>
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
         </TabsList>
-        
-        <TabsContent value="brief" className="space-y-6">
-          <AIDailyBrief />
-        </TabsContent>
         
         <TabsContent value="ai-screener" className="space-y-6">
           <AIScreener />

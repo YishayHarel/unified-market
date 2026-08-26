@@ -42,9 +42,6 @@ verify_jwt = false
 [functions.ai-risk-assessment]
 verify_jwt = true
 
-[functions.ai-daily-brief]
-verify_jwt = true
-
 [functions.ai-portfolio-optimizer]
 verify_jwt = true
 
