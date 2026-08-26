@@ -179,8 +179,11 @@ serve(async (req) => {
 
     if (typeof criteria.marketCapMin === 'number') dbQuery = dbQuery.gte('market_cap', criteria.marketCapMin);
     if (typeof criteria.marketCapMax === 'number') dbQuery = dbQuery.lte('market_cap', criteria.marketCapMax);
-    if (typeof criteria.dayChangeMinPct === 'number') dbQuery = dbQuery.gte('last_return_1d', criteria.dayChangeMinPct);
-    if (typeof criteria.dayChangeMaxPct === 'number') dbQuery = dbQuery.lte('last_return_1d', criteria.dayChangeMaxPct);
+    // last_return_1d is stored as a decimal fraction (0.02 = 2%) while the
+    // model reasons in percent, so convert or every threshold is out by 100x
+    // and "up more than 3%" screens for a 300% day.
+    if (typeof criteria.dayChangeMinPct === 'number') dbQuery = dbQuery.gte('last_return_1d', criteria.dayChangeMinPct / 100);
+    if (typeof criteria.dayChangeMaxPct === 'number') dbQuery = dbQuery.lte('last_return_1d', criteria.dayChangeMaxPct / 100);
     if (Array.isArray(criteria.exchanges) && criteria.exchanges.length > 0) dbQuery = dbQuery.in('exchange', criteria.exchanges);
     if (criteria.nameContains) dbQuery = dbQuery.ilike('name', `%${criteria.nameContains}%`);
 
@@ -242,7 +245,13 @@ JSON only:
 Criteria applied: ${JSON.stringify(criteria)}
 
 MATCHES:
-${rows.map((r) => `- ${r.symbol} (${r.name}), exchange ${r.exchange}, market cap ${r.market_cap}, last daily return ${r.last_return_1d}%`).join('\n')}
+${rows.map((r) => {
+  const capB = r.market_cap ? `$${(Number(r.market_cap) / 1e9).toFixed(1)}B` : 'unknown';
+  // Stored as a fraction; present it as a percentage so the model quotes it
+  // the way a reader expects to see it.
+  const ret = r.last_return_1d == null ? 'unknown' : `${(Number(r.last_return_1d) * 100).toFixed(2)}%`;
+  return `- ${r.symbol} (${r.name}), ${r.exchange}, market cap ${capB}, last daily return ${ret}`;
+}).join('\n')}
 
 ${caveats.join(' ')}`;
 
