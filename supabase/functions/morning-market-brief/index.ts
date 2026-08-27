@@ -25,6 +25,24 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
+const AI_DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '20');
+
+// Generating a brief is expensive, and one morning only warrants a few.
+const MAX_REQUESTS_PER_MINUTE = 5;
+const rateLimits = new Map<string, { count: number; resetTime: number }>();
+
+function checkRateLimit(identifier: string): { allowed: boolean } {
+  const now = Date.now();
+  const limit = rateLimits.get(identifier);
+  if (!limit || now > limit.resetTime) {
+    rateLimits.set(identifier, { count: 1, resetTime: now + 60_000 });
+    return { allowed: true };
+  }
+  if (limit.count >= MAX_REQUESTS_PER_MINUTE) return { allowed: false };
+  limit.count++;
+  return { allowed: true };
+}
+
 const AI_ENABLED = (Deno.env.get('AI_ENABLED') ?? 'false') === 'true';
 
 // Yahoo Finance futures symbols
@@ -321,6 +339,36 @@ serve(async (req) => {
     const subscription = await checkSubscription(userData.user.email);
     if (!subscription.subscribed) {
       return subscriptionRequiredResponse(subscription, corsHeaders);
+    }
+
+    // This endpoint had neither a per-minute nor a daily cap, unlike every
+    // other AI function, so a subscriber could call it in a loop and each call
+    // would spend tokens. A brief is worth generating a handful of times a day
+    // at most — it describes one morning.
+    const rateCheck = checkRateLimit(userId);
+    if (!rateCheck.allowed) {
+      return new Response(
+        JSON.stringify({ error: 'Too many requests. Please try again shortly.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { data: usageAllowed, error: usageError } = await supabase.rpc('check_ai_usage', {
+      p_user_id: userId,
+      p_daily_limit: AI_DAILY_LIMIT
+    });
+    if (usageError) {
+      console.error('[Morning Brief] Usage check error:', usageError);
+      return new Response(
+        JSON.stringify({ error: 'Usage check failed' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (!usageAllowed) {
+      return new Response(
+        JSON.stringify({ error: 'Daily AI limit reached. Please try again tomorrow.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     console.log(`[Morning Brief] Generating brief for user: ${userId.slice(0, 8)}…`);
