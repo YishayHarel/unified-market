@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,10 @@ interface NewsArticle {
   publishedAt: string;
   url: string;
   urlToImage?: string;
+  /** Other symbols the story mentions, tagged at ingest. */
+  tickers?: string[];
+  bullCount?: number;
+  bearCount?: number;
 }
 
 const StockNews = ({ symbol, companyName }: StockNewsProps) => {
@@ -185,6 +190,27 @@ const StockNews = ({ symbol, companyName }: StockNewsProps) => {
                 </p>
               )}
               
+              {/* Other tickers in this story — the tags exist from ingest, and
+                  on a stock page the useful ones are the companies mentioned
+                  alongside this one. */}
+              {article.tickers && article.tickers.filter((t) => t !== symbol.toUpperCase()).length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Also:</span>
+                  {article.tickers
+                    .filter((t) => t !== symbol.toUpperCase())
+                    .slice(0, 5)
+                    .map((ticker) => (
+                      <Link
+                        key={ticker}
+                        to={`/stock/${ticker}`}
+                        className="text-xs font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                      >
+                        {ticker}
+                      </Link>
+                    ))}
+                </div>
+              )}
+
               {/* Meta Info */}
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-3">
@@ -196,6 +222,11 @@ const StockNews = ({ symbol, companyName }: StockNewsProps) => {
                     <span>{formatTime(article.publishedAt)}</span>
                   </div>
                 </div>
+                {(article.bullCount || article.bearCount) ? (
+                  <span className="text-muted-foreground">
+                    🐂 {article.bullCount ?? 0} · 🐻 {article.bearCount ?? 0}
+                  </span>
+                ) : null}
               </div>
               
               {/* Bull/Bear Sentiment */}

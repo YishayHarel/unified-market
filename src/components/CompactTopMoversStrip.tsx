@@ -12,6 +12,7 @@ const CompactTopMoversStrip = () => {
   const navigate = useNavigate();
   const [movers, setMovers] = useState<StockData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [atEnd, setAtEnd] = useState(false);
 
   useEffect(() => {
     const fetchMovers = async () => {
@@ -66,7 +67,17 @@ const CompactTopMoversStrip = () => {
   return (
     <div>
       <h3 className="text-sm font-medium text-muted-foreground mb-2">Top movers today</h3>
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      {/* The row scrolls past the edge with nothing to show it. A fade on the
+          right reads as "there is more", where a cut-off pill reads as a layout
+          bug; it is masked out once the row is scrolled to the end. */}
+      <div className="relative">
+        <div
+          className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            setAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 4);
+          }}
+        >
         {movers.map((stock) => {
           const pct = stock.last_return_1d != null ? stock.last_return_1d * 100 : 0;
           const up = pct >= 0;
@@ -91,6 +102,14 @@ const CompactTopMoversStrip = () => {
             </button>
           );
         })}
+        </div>
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-card to-transparent transition-opacity",
+            atEnd ? "opacity-0" : "opacity-100",
+          )}
+        />
       </div>
     </div>
   );
