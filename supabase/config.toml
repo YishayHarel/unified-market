@@ -37,7 +37,10 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.ai-screener]
-verify_jwt = false
+# Matches the other AI endpoints. The function checks auth itself regardless,
+# but verifying at the platform edge rejects anonymous callers before they
+# consume an invocation.
+verify_jwt = true
 
 [functions.ai-risk-assessment]
 verify_jwt = true
