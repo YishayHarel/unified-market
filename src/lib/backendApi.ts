@@ -81,7 +81,19 @@ export async function fetchStockPricesFromBackend(symbols: string[]): Promise<Ba
     throw new Error("Backend stock-prices returned invalid response");
   }
 
-  return data as BackendStockPrice[];
+  const prices = data as BackendStockPrice[];
+
+  // A 200 carrying zeros is worse than an error: callers render $0.00 as if it
+  // were the price. The backend reports this as isFallback when its upstream
+  // gives it nothing — a stale provider key there produced a stock page showing
+  // $0.00 for every field. Treat it as a failure so the caller falls through to
+  // the edge function, which has its own key.
+  const usable = prices.filter((p) => !p.isFallback && typeof p.price === "number" && p.price > 0);
+  if (usable.length === 0 && prices.length > 0) {
+    throw new Error("Backend stock-prices returned no usable prices");
+  }
+
+  return usable;
 }
 
 export async function fetchNewsFromBackend(payload: {
