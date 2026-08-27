@@ -6,7 +6,6 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { TrendingUp, TrendingDown, Activity, BarChart3, AlertTriangle } from "lucide-react";
 import YieldAndVixCharts from "@/components/analytics/YieldAndVixCharts";
-import { fetchMarketSentimentFromBackend } from "@/lib/backendApi";
 
 interface MarketSentiment {
   fearGreedIndex: {
@@ -59,17 +58,13 @@ const MarketSentimentDashboard = () => {
       let error: any = null;
 
       try {
-        data = await fetchMarketSentimentFromBackend();
-      } catch (backendError) {
-        console.warn("Express backend unavailable for market sentiment, falling back to Supabase");
-        if (backendError instanceof Error) {
-          console.warn("Backend market sentiment error:", backendError.message);
-        }
-        const fallback = await supabase.functions.invoke('market-sentiment', {
+        const response = await supabase.functions.invoke('market-sentiment', {
           body: {}
         });
-        data = fallback.data;
-        error = fallback.error;
+        data = response.data;
+        error = response.error;
+      } catch (invokeError) {
+        error = invokeError;
       }
 
       if (error) throw error;

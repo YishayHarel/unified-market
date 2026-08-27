@@ -1,5 +1,4 @@
 import { supabase } from "@/integrations/supabase/client";
-import { fetchStockCandlesFromBackend } from "@/lib/backendApi";
 
 function hasUsableCandles(data: unknown, requireIndicators: boolean): boolean {
   const d = data as { candles?: unknown; indicators?: unknown } | null;
@@ -10,9 +9,8 @@ function hasUsableCandles(data: unknown, requireIndicators: boolean): boolean {
 }
 
 /**
- * Fetches OHLC candles for charts. Tries Supabase Edge first (where API secrets usually live in prod),
- * then the Express backend. Fixes the case where the backend returns 200 + empty candles and the
- * client never called the edge function.
+ * Fetches OHLC candles for charts from the edge function, which sources Yahoo
+ * first and falls back through the keyed providers internally.
  */
 export async function fetchStockCandlesReliable(payload: {
   symbol: string;
@@ -34,19 +32,6 @@ export async function fetchStockCandlesReliable(payload: {
   }
   if (sErr) {
     console.warn("[candles] get-stock-candles:", sErr.message);
-  }
-
-  try {
-    const bData = await fetchStockCandlesFromBackend({
-      symbol: sym,
-      period,
-      includeIndicators: requireIndicators,
-    });
-    if (hasUsableCandles(bData, requireIndicators)) {
-      return { data: bData, error: null };
-    }
-  } catch (e) {
-    console.warn("[candles] Express backend:", e instanceof Error ? e.message : e);
   }
 
   if (!sErr && sData) {

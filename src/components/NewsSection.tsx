@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import NewsSentiment from "@/components/NewsSentiment";
-import { fetchNewsFromBackend } from "@/lib/backendApi";
 
 // Force cache refresh
 
@@ -57,26 +56,13 @@ const NewsSection = () => {
       let data: any = null;
       let error: any = null;
 
-      // The edge function is tried first for news specifically: it reads the
-      // ingest cache, so only it can return ticker tags, Bull/Bear tallies, and
-      // a watchlist-led ordering. The Express route still serves live RSS as a
-      // fallback, just without those.
-      try {
-        const watchlist = await loadWatchlist().catch(() => []);
-        const fetchPromise = supabase.functions.invoke('get-news', {
-          body: { category: 'business', country: 'us', pageSize: 50, watchlist },
-        });
-        const primary = (await Promise.race([fetchPromise, timeoutPromise])) as any;
-        if (primary?.error) throw primary.error;
-        data = primary?.data;
-      } catch (edgeError) {
-        console.warn('Edge news unavailable, falling back to Express backend');
-        if (edgeError instanceof Error) console.warn('Edge news error:', edgeError.message);
-        data = (await Promise.race([
-          fetchNewsFromBackend({ pageSize: 50 }),
-          timeoutPromise,
-        ])) as any;
-      }
+      const watchlist = await loadWatchlist().catch(() => []);
+      const fetchPromise = supabase.functions.invoke('get-news', {
+        body: { category: 'business', country: 'us', pageSize: 50, watchlist },
+      });
+      const primary = (await Promise.race([fetchPromise, timeoutPromise])) as any;
+      if (primary?.error) throw primary.error;
+      data = primary?.data;
 
       if (error) {
         console.error('Supabase function error:', error);

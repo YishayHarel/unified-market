@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Newspaper, ExternalLink, Clock, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import NewsSentiment from "@/components/NewsSentiment";
-import { fetchNewsFromBackend } from "@/lib/backendApi";
 
 interface StockNewsProps {
   symbol: string;
@@ -34,27 +33,14 @@ const StockNews = ({ symbol, companyName }: StockNewsProps) => {
       let data: any = null;
       let fetchError: any = null;
 
-      // Edge first for per-symbol news, unlike the rest of the app: only this
-      // path reads the ingest cache, so it is the one that returns ticker tags
-      // and Bull/Bear tallies. It falls back to live sources internally, so an
-      // empty cache still yields articles.
-      try {
-        const edge = await supabase.functions.invoke('get-news', {
-          body: { symbol, companyName, pageSize: 10 },
-        });
-        if (edge.error) throw edge.error;
-        data = edge.data;
-      } catch (edgeError) {
-        console.warn("Edge news unavailable for stock news, falling back to Express");
-        if (edgeError instanceof Error) {
-          console.warn("Edge news error:", edgeError.message);
-        }
-        try {
-          data = await fetchNewsFromBackend({ symbol, pageSize: 10 });
-        } catch (backendError) {
-          fetchError = backendError;
-        }
-      }
+      // get-news reads the ingest cache, so it returns ticker tags and
+      // Bull/Bear tallies, and falls back to live sources internally when the
+      // cache has nothing for this symbol.
+      const edge = await supabase.functions.invoke('get-news', {
+        body: { symbol, companyName, pageSize: 10 },
+      });
+      data = edge.data;
+      fetchError = edge.error;
 
       if (fetchError) throw fetchError;
       
