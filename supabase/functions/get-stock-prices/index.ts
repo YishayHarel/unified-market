@@ -39,6 +39,36 @@ function setCache(symbol: string, data: any): void {
 }
 
 // Fetches single price from Finnhub
+/**
+ * Daily volume, which Finnhub's quote endpoint does not carry — the stock page
+ * showed "0.0M" for every symbol as a result. Yahoo returns it alongside the
+ * rest of the quote, needs no key, and is not rate limited.
+ *
+ * Applied only to small requests: the stock page asks for one symbol and shows
+ * volume, while the batch callers (movers, indices) do not display it and
+ * should not pay for a round trip each.
+ */
+const VOLUME_ENRICH_MAX_SYMBOLS = 5;
+
+async function fetchYahooVolume(symbol: string): Promise<number | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`,
+      { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; UnifiedMarket/1.0)' } },
+    );
+    if (!res.ok) return null;
+    const meta = (await res.json())?.chart?.result?.[0]?.meta;
+    const volume = meta?.regularMarketVolume;
+    return typeof volume === 'number' && volume > 0 ? volume : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchFinnhubPrice(symbol: string, apiKey: string): Promise<any | null> {
   try {
     const controller = new AbortController();
@@ -67,6 +97,7 @@ async function fetchFinnhubPrice(symbol: string, apiKey: string): Promise<any | 
         low: data.l || data.c,
         open: data.o || data.c,
         previousClose: data.pc || data.c,
+        volume: null,
         isFallback: false
       };
     }
@@ -246,6 +277,19 @@ serve(async (req) => {
         const tdMap = await fetchPricesWithTwelveData(missing, nextTwelveDataKey);
         for (const [k, v] of tdMap) merged.set(k, v);
       }
+      // Volume comes from Yahoo because no keyed provider here returns it.
+      // Fetched concurrently, and only for small requests, so the stock page
+      // gets it without slowing the batch callers that never show it.
+      if (uncachedUnique.length <= VOLUME_ENRICH_MAX_SYMBOLS) {
+        const volumes = await Promise.all(
+          uncachedUnique.map(async (symbol) => [symbol, await fetchYahooVolume(symbol)] as const),
+        );
+        for (const [symbol, volume] of volumes) {
+          const price = merged.get(symbol);
+          if (price && volume != null) price.volume = volume;
+        }
+      }
+
       for (const symbol of uncachedUnique) {
         const price = merged.get(symbol);
         if (price) results.push(price);
