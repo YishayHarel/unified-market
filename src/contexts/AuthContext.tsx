@@ -99,6 +99,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const signOutRequested = useRef(false);
+
+  /**
+   * True until the stored session has been restored on load.
+   *
+   * Supabase fires SIGNED_IN when it restores a stored session, not only when
+   * someone actually signs in — so "Welcome back! You have been signed in
+   * successfully" popped up on every single page load, sitting over the bottom
+   * of whatever the person had opened. The greeting belongs to a real sign-in,
+   * which by definition happens after this settles.
+   */
+  const restoringSession = useRef(true);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [subscription, setSubscription] = useState<SubscriptionStatus>({
     subscribed: false,
@@ -187,10 +198,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const u = session?.user ?? null;
           if (u) analytics.setUserId(u.id);
           analytics.userAction('sign_in', { method: 'email' });
-          toast({
-            title: "Welcome back!",
-            description: "You have been signed in successfully.",
-          });
+          if (!restoringSession.current) {
+            toast({
+              title: "Welcome back!",
+              description: "You have been signed in successfully.",
+            });
+          }
           setTimeout(() => checkSubscription(), 100);
           initSessionManager({
             onSessionExpired: handleSessionExpired,
@@ -226,7 +239,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-      
+      // Anything from here on is a real sign-in, not a restore.
+      restoringSession.current = false;
+
       // Initialize session manager if already logged in
       if (session) {
         initSessionManager({
