@@ -18,6 +18,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import UserAutocomplete from "@/components/UserAutocomplete";
+import SignInPrompt from "@/components/SignInPrompt";
 
 interface FollowedUser {
   user_id: string;
@@ -314,7 +315,10 @@ const SocialFeatures = () => {
       <Card>
         <CardContent className="p-6 text-center">
           <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-          <p className="text-muted-foreground">Please sign in to access social features.</p>
+          <SignInPrompt
+            title="Sign in to follow other investors"
+            description="Share picks, follow investors, and track how calls played out."
+          />
         </CardContent>
       </Card>
     );

@@ -9,6 +9,7 @@ import { Trash2, Plus, Search, TrendingUp, TrendingDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStockPrices } from "@/hooks/useStockPrices";
 import StockAutocomplete from "@/components/StockAutocomplete";
+import SignInPrompt from "@/components/SignInPrompt";
 
 interface SavedStock {
   id: string;
@@ -175,9 +176,10 @@ const UserSavedStocks = () => {
       </CardHeader>
       <CardContent className="space-y-4">
         {!user && (
-          <p className="text-sm text-muted-foreground">
-            Sign in to save a personal watchlist. You can still search above and open any ticker.
-          </p>
+          <SignInPrompt
+            compact
+            title="Sign in to save a personal watchlist — you can still search above and open any ticker."
+          />
         )}
         <div className="flex gap-2 items-start">
           <StockAutocomplete

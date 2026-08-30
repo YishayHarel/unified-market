@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import SignInPrompt from "@/components/SignInPrompt";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -218,10 +219,10 @@ const DividendTracker = () => {
           <CardTitle>💰 Dividend Tracker</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-8 text-muted-foreground">
-            <p className="text-lg mb-2">Sign in to track dividends</p>
-            <p className="text-sm">Create an account to start tracking your dividend income</p>
-          </div>
+          <SignInPrompt
+            title="Sign in to track dividends"
+            description="Record your holdings and see the income they pay out."
+          />
         </CardContent>
       </Card>
     );

@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Bell, Plus, Trash2, TrendingUp, TrendingDown, Activity, Percent, Calendar, DollarSign } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import SignInPrompt from "@/components/SignInPrompt";
 
 interface Alert {
   id: string;
@@ -246,7 +247,10 @@ const WatchlistAlerts = () => {
     return (
       <Card>
         <CardContent className="p-6 text-center">
-          <p className="text-muted-foreground">Please sign in to view watchlist alerts.</p>
+          <SignInPrompt
+            title="Sign in to set price alerts"
+            description="Get notified when a stock you follow hits your target."
+          />
         </CardContent>
       </Card>
     );
