@@ -6,6 +6,7 @@ import { Link, Navigate } from "react-router-dom";
 import NotificationSettings from "@/components/NotificationSettings";
 import WatchlistAlerts from "@/components/WatchlistAlerts";
 import DisplayNameSettings from "@/components/DisplayNameSettings";
+import ChangePasswordSettings from "@/components/ChangePasswordSettings";
 
 const Settings = () => {
   const { user, subscription } = useAuth();
@@ -65,6 +66,10 @@ const Settings = () => {
 
         {/* Display name — sits under Account since it is identity, not alerts. */}
         <DisplayNameSettings />
+
+        {/* Changing a password required going through the emailed reset link,
+            even while signed in. */}
+        <ChangePasswordSettings />
 
         {/* Notification Settings */}
         <NotificationSettings />
