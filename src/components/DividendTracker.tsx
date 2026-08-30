@@ -1,22 +1,32 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import SignInPrompt from "@/components/SignInPrompt";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Plus, Edit2, Save, X } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Trash2, Plus, Pencil, Loader2, Download, CalendarDays } from "lucide-react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface UserDividend {
   id: string;
@@ -30,172 +40,305 @@ interface UserDividend {
   created_at: string;
 }
 
+/** What the lookup returns from get-dividend-info. */
+interface DividendInfo {
+  symbol: string;
+  company: string | null;
+  price: number | null;
+  dividendPerShare: number | null;
+  frequency: number | null;
+  annualDividend: number | null;
+  yieldPercentage: number | null;
+  lastPaidDate: string | null;
+  nextPayDate: string | null;
+  paysDividend: boolean;
+}
+
+// Guards against the kind of entry this table already collected before there
+// was any validation: 67,676,767 shares paying $67 twenty times a year.
+const MAX_SHARES = 10_000_000;
+const MAX_DIVIDEND_PER_SHARE = 1_000;
+const MAX_FREQUENCY = 12;
+
+const money = (n: number) =>
+  n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+
+const payDate = (iso: string) =>
+  new Date(`${iso}T12:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
 const DividendTracker = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
   const [dividends, setDividends] = useState<UserDividend[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAddingNew, setIsAddingNew] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<UserDividend | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<UserDividend | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
 
-  // Form state
-  const [formData, setFormData] = useState({
-    symbol: "",
-    company: "",
-    shares: "",
-    dividend_per_share: "",
-    frequency: "4",
-    yield_percentage: "",
-  });
+  const [symbol, setSymbol] = useState("");
+  const [shares, setShares] = useState("");
+  const [company, setCompany] = useState("");
+  const [perShare, setPerShare] = useState("");
+  const [frequency, setFrequency] = useState("");
+  const [yieldPct, setYieldPct] = useState("");
+  const [nextPay, setNextPay] = useState<string | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [lookupNote, setLookupNote] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("user_dividends")
+      .select("id, symbol, company, shares, dividend_per_share, frequency, next_pay_date, yield_percentage, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Could not load dividends:", error.message);
+      toast.error("Could not load your dividend stocks");
+    } else {
+      setDividends((data ?? []) as UserDividend[]);
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     if (user) {
-      fetchDividends();
+      void load();
     } else {
+      setDividends([]);
       setLoading(false);
     }
-  }, [user]);
+  }, [user, load]);
 
-  const fetchDividends = async () => {
-    try {
-      const { data, error } = await (supabase
-        .from("user_dividends") as any)
-        .select("*")
-        .order("created_at", { ascending: false });
+  /**
+   * Fills in the payout details for a symbol.
+   *
+   * This is the point of the rewrite: the payout, cadence and yield are facts
+   * about the company, not preferences, so asking the reader to supply them
+   * only invited wrong numbers. They stay editable for the cases the data
+   * misses — a special dividend, a freshly announced raise.
+   */
+  const lookup = useCallback(async (raw: string) => {
+    const clean = raw.trim().toUpperCase();
+    if (!clean) return;
 
-      if (error) throw error;
-      setDividends(data || []);
-    } catch (error) {
-      console.error("Error fetching dividends:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load dividend data",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+    setLookingUp(true);
+    setLookupNote(null);
 
-  const resetForm = () => {
-    setFormData({
-      symbol: "",
-      company: "",
-      shares: "",
-      dividend_per_share: "",
-      frequency: "4",
-      yield_percentage: "",
+    const { data, error } = await supabase.functions.invoke<DividendInfo>("get-dividend-info", {
+      body: { symbol: clean },
     });
-  };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!formData.symbol || !formData.company || !formData.shares || !formData.dividend_per_share) {
-      toast({
-        title: "Missing fields",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
+    setLookingUp(false);
+
+    if (error || !data) {
+      setLookupNote("Could not look that up — you can still enter the numbers yourself.");
       return;
     }
 
-    try {
-      const dividendData = {
-        user_id: user!.id,
-        symbol: formData.symbol.toUpperCase(),
-        company: formData.company,
-        shares: parseFloat(formData.shares),
-        dividend_per_share: parseFloat(formData.dividend_per_share),
-        frequency: parseInt(formData.frequency),
-        yield_percentage: formData.yield_percentage ? parseFloat(formData.yield_percentage) : null,
-      };
+    if (data.company) setCompany(data.company);
 
-      if (editingId) {
-        const { error } = await (supabase
-          .from("user_dividends") as any)
-          .update(dividendData)
-          .eq("id", editingId);
-        
-        if (error) throw error;
-        
-        toast({
-          title: "Updated",
-          description: "Dividend stock updated successfully",
-        });
-        setEditingId(null);
-      } else {
-        const { error } = await (supabase
-          .from("user_dividends") as any)
-          .insert(dividendData);
-        
-        if (error) throw error;
-        
-        toast({
-          title: "Added",
-          description: "New dividend stock added successfully",
-        });
-        setIsAddingNew(false);
+    if (!data.paysDividend) {
+      setLookupNote(`${data.symbol} has not paid a dividend in the last two years.`);
+      return;
+    }
+
+    if (data.dividendPerShare != null) setPerShare(String(data.dividendPerShare));
+    if (data.frequency != null) setFrequency(String(data.frequency));
+    if (data.yieldPercentage != null) setYieldPct(String(data.yieldPercentage));
+    setNextPay(data.nextPayDate);
+
+    const parts: string[] = [];
+    if (data.annualDividend != null) parts.push(`${money(data.annualDividend)}/share per year`);
+    if (data.yieldPercentage != null) parts.push(`${data.yieldPercentage}% yield`);
+    if (data.lastPaidDate) parts.push(`last paid ${payDate(data.lastPaidDate)}`);
+    setLookupNote(parts.join(" · ") || null);
+  }, []);
+
+  function openAdd() {
+    setEditing(null);
+    setSymbol("");
+    setShares("");
+    setCompany("");
+    setPerShare("");
+    setFrequency("4");
+    setYieldPct("");
+    setNextPay(null);
+    setLookupNote(null);
+    setFormOpen(true);
+  }
+
+  function openEdit(d: UserDividend) {
+    setEditing(d);
+    setSymbol(d.symbol);
+    setShares(String(d.shares));
+    setCompany(d.company);
+    setPerShare(String(d.dividend_per_share));
+    setFrequency(String(d.frequency));
+    setYieldPct(d.yield_percentage != null ? String(d.yield_percentage) : "");
+    setNextPay(d.next_pay_date);
+    setLookupNote(null);
+    setFormOpen(true);
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+
+    const cleanSymbol = symbol.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g, "");
+    const sharesNum = Number(shares);
+    const perShareNum = Number(perShare);
+    const frequencyNum = Number(frequency);
+    const yieldNum = yieldPct.trim() === "" ? null : Number(yieldPct);
+
+    if (!cleanSymbol) return toast.error("Enter a ticker symbol.");
+    if (!company.trim()) return toast.error("Enter the company name.");
+    if (!Number.isFinite(sharesNum) || sharesNum <= 0 || sharesNum > MAX_SHARES) {
+      return toast.error(`Shares must be between 0 and ${MAX_SHARES.toLocaleString()}.`);
+    }
+    if (!Number.isFinite(perShareNum) || perShareNum <= 0 || perShareNum > MAX_DIVIDEND_PER_SHARE) {
+      return toast.error("Dividend per share must be a positive amount.");
+    }
+    if (!Number.isInteger(frequencyNum) || frequencyNum < 1 || frequencyNum > MAX_FREQUENCY) {
+      return toast.error("Frequency must be between 1 and 12 payments a year.");
+    }
+    if (yieldNum !== null && (!Number.isFinite(yieldNum) || yieldNum < 0 || yieldNum > 100)) {
+      return toast.error("Yield must be between 0 and 100%.");
+    }
+
+    setSaving(true);
+
+    const payload = {
+      user_id: user.id,
+      symbol: cleanSymbol,
+      company: company.trim(),
+      shares: sharesNum,
+      dividend_per_share: perShareNum,
+      frequency: frequencyNum,
+      yield_percentage: yieldNum,
+      next_pay_date: nextPay,
+    };
+
+    const { error } = editing
+      ? await supabase.from("user_dividends").update(payload).eq("id", editing.id)
+      : await supabase.from("user_dividends").insert(payload);
+
+    setSaving(false);
+
+    if (error) {
+      console.error("Could not save dividend:", error.message);
+      toast.error("Could not save that stock");
+      return;
+    }
+
+    toast.success(editing ? `${cleanSymbol} updated` : `${cleanSymbol} added`);
+    setFormOpen(false);
+    void load();
+  }
+
+  async function confirmDelete() {
+    const target = pendingDelete;
+    setPendingDelete(null);
+    if (!target) return;
+
+    const { error } = await supabase.from("user_dividends").delete().eq("id", target.id);
+    if (error) {
+      toast.error("Could not remove that stock");
+      return;
+    }
+    toast.success(`${target.symbol} removed`);
+    void load();
+  }
+
+  /**
+   * Pulls in whichever portfolio positions actually pay a dividend.
+   *
+   * Holdings were already entered on the portfolio screen, so re-typing the
+   * same tickers here was pure duplication — and the two lists drifted apart
+   * the moment one was updated without the other.
+   */
+  async function importFromPortfolio() {
+    if (!user) return;
+    setImporting(true);
+
+    const { data: holdings, error } = await supabase
+      .from("portfolio_holdings")
+      .select("symbol, company_name, shares");
+
+    if (error || !holdings || holdings.length === 0) {
+      setImporting(false);
+      toast.error(
+        error ? "Could not read your portfolio" : "No portfolio positions to import yet",
+      );
+      return;
+    }
+
+    const already = new Set(dividends.map((d) => d.symbol));
+    const candidates = holdings.filter((h) => !already.has(String(h.symbol).toUpperCase()));
+
+    if (candidates.length === 0) {
+      setImporting(false);
+      toast.info("Every position is already tracked here");
+      return;
+    }
+
+    let added = 0;
+    let skipped = 0;
+
+    for (const holding of candidates) {
+      const { data: info } = await supabase.functions.invoke<DividendInfo>("get-dividend-info", {
+        body: { symbol: holding.symbol },
+      });
+
+      if (!info?.paysDividend || info.dividendPerShare == null || info.frequency == null) {
+        skipped++;
+        continue;
       }
 
-      resetForm();
-      fetchDividends();
-    } catch (error) {
-      console.error("Error saving dividend:", error);
-      toast({
-        title: "Error",
-        description: "Failed to save dividend data",
-        variant: "destructive",
+      const { error: insertError } = await supabase.from("user_dividends").insert({
+        user_id: user.id,
+        symbol: info.symbol,
+        company: info.company ?? holding.company_name ?? info.symbol,
+        shares: Number(holding.shares),
+        dividend_per_share: info.dividendPerShare,
+        frequency: info.frequency,
+        yield_percentage: info.yieldPercentage,
+        next_pay_date: info.nextPayDate,
       });
+
+      if (insertError) skipped++;
+      else added++;
     }
-  };
 
-  const handleEdit = (dividend: UserDividend) => {
-    setFormData({
-      symbol: dividend.symbol,
-      company: dividend.company,
-      shares: dividend.shares.toString(),
-      dividend_per_share: dividend.dividend_per_share.toString(),
-      frequency: dividend.frequency.toString(),
-      yield_percentage: dividend.yield_percentage?.toString() || "",
-    });
-    setEditingId(dividend.id);
-  };
+    setImporting(false);
+    void load();
 
-  const handleDelete = async (id: string, symbol: string) => {
-    try {
-      const { error } = await (supabase
-        .from("user_dividends") as any)
-        .delete()
-        .eq("id", id);
-
-      if (error) throw error;
-
-      toast({
-        title: "Deleted",
-        description: `${symbol} removed from dividend tracker`,
-      });
-      fetchDividends();
-    } catch (error) {
-      console.error("Error deleting dividend:", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete dividend",
-        variant: "destructive",
-      });
+    if (added === 0) {
+      toast.info("None of your positions pay a dividend");
+    } else {
+      toast.success(
+        `Imported ${added} dividend payer${added === 1 ? "" : "s"}` +
+          (skipped > 0 ? ` · ${skipped} skipped` : ""),
+      );
     }
-  };
+  }
 
-  const calculateTotals = () => {
-    const totalAnnual = dividends.reduce((sum, div) => 
-      sum + (div.shares * div.dividend_per_share * div.frequency), 0
+  const totals = useMemo(() => {
+    const annual = dividends.reduce(
+      (sum, d) => sum + d.shares * d.dividend_per_share * d.frequency,
+      0,
     );
-    const monthlyEstimate = totalAnnual / 12;
-    
-    return { totalAnnual, monthlyEstimate };
-  };
+    return { annual, monthly: annual / 12 };
+  }, [dividends]);
 
-  const { totalAnnual, monthlyEstimate } = calculateTotals();
+  /** The soonest payments, so the page says something about what happens next. */
+  const upcoming = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return dividends
+      .filter((d) => d.next_pay_date && d.next_pay_date >= today)
+      .sort((a, b) => (a.next_pay_date! < b.next_pay_date! ? -1 : 1))
+      .slice(0, 3);
+  }, [dividends]);
 
   if (loading) {
     return (
@@ -203,10 +346,8 @@ const DividendTracker = () => {
         <CardHeader>
           <CardTitle>💰 Dividend Tracker</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center p-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
+        <CardContent className="flex items-center justify-center p-8">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </CardContent>
       </Card>
     );
@@ -230,261 +371,286 @@ const DividendTracker = () => {
 
   return (
     <div className="space-y-6">
-      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="text-sm text-muted-foreground mb-1">Total Annual</div>
-            <div className="text-2xl font-bold text-primary">
-              ${totalAnnual.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </div>
+            <div className="text-2xl font-bold text-primary">{money(totals.annual)}</div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="text-sm text-muted-foreground mb-1">Holdings</div>
             <div className="text-2xl font-bold">{dividends.length}</div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="text-sm text-muted-foreground mb-1">Monthly Est.</div>
-            <div className="text-2xl font-bold text-accent">
-              ${monthlyEstimate.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </div>
+            <div className="text-2xl font-bold text-accent">{money(totals.monthly)}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Add New Button */}
+      {upcoming.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <CalendarDays className="h-4 w-4" />
+              Next payments (estimated)
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+              {upcoming.map((d) => (
+                <div key={d.id}>
+                  <span className="font-medium">{d.symbol}</span>
+                  <span className="text-muted-foreground"> · {payDate(d.next_pay_date!)} · </span>
+                  <span className="text-primary font-medium">
+                    {money(d.shares * d.dividend_per_share)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Your Dividend Stocks</CardTitle>
-          <Dialog open={isAddingNew} onOpenChange={setIsAddingNew}>
-            <DialogTrigger asChild>
-              <Button>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Your Dividend Stocks</CardTitle>
+              <CardDescription>
+                Payout, cadence and yield are looked up for you — just enter the ticker and how
+                many shares you hold.
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={importFromPortfolio} disabled={importing}>
+                {importing ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                From portfolio
+              </Button>
+              <Button onClick={openAdd}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Stock
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Dividend Stock</DialogTitle>
-                <DialogDescription>
-                  Add a new dividend-paying stock to your portfolio
-                </DialogDescription>
-              </DialogHeader>
-              
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="symbol">Symbol *</Label>
-                    <Input
-                      id="symbol"
-                      value={formData.symbol}
-                      onChange={(e) => setFormData({...formData, symbol: e.target.value})}
-                      placeholder="AAPL"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="company">Company *</Label>
-                    <Input
-                      id="company"
-                      value={formData.company}
-                      onChange={(e) => setFormData({...formData, company: e.target.value})}
-                      placeholder="Apple Inc."
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="shares">Shares *</Label>
-                    <Input
-                      id="shares"
-                      type="number"
-                      step="0.01"
-                      value={formData.shares}
-                      onChange={(e) => setFormData({...formData, shares: e.target.value})}
-                      placeholder="100"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="dividend_per_share">Dividend per Share *</Label>
-                    <Input
-                      id="dividend_per_share"
-                      type="number"
-                      step="0.01"
-                      value={formData.dividend_per_share}
-                      onChange={(e) => setFormData({...formData, dividend_per_share: e.target.value})}
-                      placeholder="0.94"
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="frequency">Frequency (per year)</Label>
-                    <Input
-                      id="frequency"
-                      type="number"
-                      value={formData.frequency}
-                      onChange={(e) => setFormData({...formData, frequency: e.target.value})}
-                      placeholder="4"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="yield_percentage">Yield %</Label>
-                    <Input
-                      id="yield_percentage"
-                      type="number"
-                      step="0.01"
-                      value={formData.yield_percentage}
-                      onChange={(e) => setFormData({...formData, yield_percentage: e.target.value})}
-                      placeholder="2.5"
-                    />
-                  </div>
-                </div>
-                
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setIsAddingNew(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit">Add Stock</Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+            </div>
+          </div>
         </CardHeader>
-        
+
         <CardContent>
           {dividends.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p className="text-lg mb-2">No dividend stocks yet</p>
-              <p className="text-sm">Add your first dividend-paying stock to start tracking</p>
+              <p className="text-sm">
+                Add a ticker, or import the dividend payers already in your portfolio.
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
-              {dividends.map((dividend) => (
-                <div key={dividend.id} className="p-4 rounded-lg bg-muted/50 relative">
-                  {editingId === dividend.id ? (
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label>Symbol</Label>
-                          <Input
-                            value={formData.symbol}
-                            onChange={(e) => setFormData({...formData, symbol: e.target.value})}
-                          />
+              {dividends.map((d) => (
+                <div key={d.id} className="p-4 rounded-lg bg-muted/50">
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="min-w-0">
+                      <Badge variant="secondary" className="mb-1">
+                        {d.symbol}
+                      </Badge>
+                      <div className="text-sm text-muted-foreground truncate">{d.company}</div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <div className="text-right">
+                        <div className="font-bold text-primary whitespace-nowrap">
+                          {money(d.shares * d.dividend_per_share * d.frequency)} annual
                         </div>
-                        <div>
-                          <Label>Company</Label>
-                          <Input
-                            value={formData.company}
-                            onChange={(e) => setFormData({...formData, company: e.target.value})}
-                          />
-                        </div>
+                        {d.yield_percentage != null && (
+                          <div className="text-sm text-muted-foreground">
+                            {Number(d.yield_percentage).toFixed(2)}% yield
+                          </div>
+                        )}
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label>Shares</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={formData.shares}
-                            onChange={(e) => setFormData({...formData, shares: e.target.value})}
-                          />
-                        </div>
-                        <div>
-                          <Label>Dividend/Share</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={formData.dividend_per_share}
-                            onChange={(e) => setFormData({...formData, dividend_per_share: e.target.value})}
-                          />
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button type="submit" size="sm">
-                          <Save className="w-4 h-4" />
-                        </Button>
-                        <Button type="button" variant="outline" size="sm" onClick={() => {
-                          setEditingId(null);
-                          resetForm();
-                        }}>
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </form>
-                  ) : (
-                    <>
-                      <div className="absolute top-3 right-3 flex gap-1">
+                      <div className="flex gap-1">
                         <Button
                           variant="ghost"
-                          size="sm"
-                          onClick={() => handleEdit(dividend)}
+                          size="icon"
+                          onClick={() => openEdit(d)}
+                          aria-label={`Edit ${d.symbol}`}
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <Pencil className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(dividend.id, dividend.symbol)}
+                          size="icon"
+                          onClick={() => setPendingDelete(d)}
+                          aria-label={`Remove ${d.symbol}`}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
-                      
-                      <div className="flex items-center justify-between mb-3 pr-20">
-                        <div>
-                          <Badge variant="secondary" className="mb-1">
-                            {dividend.symbol}
-                          </Badge>
-                          <div className="text-sm text-muted-foreground">
-                            {dividend.company}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-bold text-primary">
-                            ${(dividend.shares * dividend.dividend_per_share * dividend.frequency).toFixed(0)} annual
-                          </div>
-                          {dividend.yield_percentage && (
-                            <div className="text-sm text-muted-foreground">
-                              {dividend.yield_percentage.toFixed(2)}% yield
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Shares: </span>
-                          <span className="font-medium">{dividend.shares}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Div/Share: </span>
-                          <span className="font-medium">${dividend.dividend_per_share.toFixed(2)}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Frequency: </span>
-                          <span className="font-medium">{dividend.frequency}x/year</span>
-                        </div>
-                      </div>
-                    </>
-                  )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Shares: </span>
+                      <span className="font-medium">{d.shares.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Div/Share: </span>
+                      <span className="font-medium">${Number(d.dividend_per_share).toFixed(2)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Frequency: </span>
+                      <span className="font-medium">{d.frequency}x/year</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Next: </span>
+                      <span className="font-medium">
+                        {d.next_pay_date ? payDate(d.next_pay_date) : "—"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editing ? `Edit ${editing.symbol}` : "Add dividend stock"}</DialogTitle>
+            <DialogDescription>
+              Enter the ticker and we will fetch the payout, how often it pays, and the current
+              yield.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={save} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="div-symbol">Symbol</Label>
+                <Input
+                  id="div-symbol"
+                  value={symbol}
+                  onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                  onBlur={(e) => void lookup(e.target.value)}
+                  placeholder="KO"
+                  autoCapitalize="characters"
+                  maxLength={12}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="div-shares">Shares</Label>
+                <Input
+                  id="div-shares"
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={shares}
+                  onChange={(e) => setShares(e.target.value)}
+                  placeholder="100"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-sm min-h-5">
+              {lookingUp ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  <span className="text-muted-foreground">Looking up dividend history…</span>
+                </>
+              ) : (
+                lookupNote && <span className="text-muted-foreground">{lookupNote}</span>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="div-company">Company</Label>
+              <Input
+                id="div-company"
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                placeholder="The Coca-Cola Company"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="div-per-share">Div/share</Label>
+                <Input
+                  id="div-per-share"
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  value={perShare}
+                  onChange={(e) => setPerShare(e.target.value)}
+                  placeholder="0.53"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="div-frequency">Per year</Label>
+                <Input
+                  id="div-frequency"
+                  type="number"
+                  min="1"
+                  max={MAX_FREQUENCY}
+                  value={frequency}
+                  onChange={(e) => setFrequency(e.target.value)}
+                  placeholder="4"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="div-yield">Yield %</Label>
+                <Input
+                  id="div-yield"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={yieldPct}
+                  onChange={(e) => setYieldPct(e.target.value)}
+                  placeholder="2.36"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving…" : editing ? "Save changes" : "Add stock"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {pendingDelete?.symbol}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes the entry from your dividend tracker. It does not affect your portfolio.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Remove</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

@@ -15,6 +15,10 @@ verify_jwt = false
 [functions.get-stock-fundamentals]
 verify_jwt = false
 
+[functions.get-dividend-info]
+# Public market facts from a keyless source, same footing as fundamentals.
+verify_jwt = false
+
 [functions.update-top-100]
 verify_jwt = false
 
