@@ -57,8 +57,19 @@ const Subscription = () => {
       }
 
       if (data?.url) {
-        window.open(data.url, "_blank");
+        // Navigate this tab rather than window.open. The URL only exists after
+        // the round-trip to Stripe, by which point the browser no longer counts
+        // this as user-initiated and blocks the popup — so the button appeared
+        // to do nothing at all, on the one screen where that costs money.
+        window.location.href = data.url;
+        return;
       }
+
+      toast({
+        title: "Checkout unavailable",
+        description: "Stripe did not return a checkout link. Please try again.",
+        variant: "destructive",
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to start checkout";
       toast({
@@ -87,8 +98,16 @@ const Subscription = () => {
       }
 
       if (data?.url) {
-        window.open(data.url, "_blank");
+        // Same popup-blocking problem as checkout.
+        window.location.href = data.url;
+        return;
       }
+
+      toast({
+        title: "Billing portal unavailable",
+        description: "Stripe did not return a portal link. Please try again.",
+        variant: "destructive",
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to open billing portal";
       toast({
