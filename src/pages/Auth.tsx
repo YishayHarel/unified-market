@@ -82,9 +82,18 @@ const Auth = () => {
     });
     setLoading(false);
 
-    // Confirm regardless of the result: saying whether an address has an
-    // account would let anyone test which emails are registered.
-    if (error) console.warn("Password reset request failed:", error.message);
+    // Supabase does not report unknown addresses — a request for an email with
+    // no account still succeeds — so an error here is a real fault (redirect
+    // URL not allow-listed, SMTP misconfigured, rate limited) and can be shown
+    // without revealing who has an account.
+    if (error) {
+      console.error("Password reset request failed:", error.message);
+      setValidationErrors([
+        `Could not send the reset email: ${error.message}`,
+      ]);
+      return;
+    }
+
     setResetSent(true);
   };
 
