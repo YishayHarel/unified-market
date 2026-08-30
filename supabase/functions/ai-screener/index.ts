@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { HOUSE_RULES, MODEL_FAST, parseJsonResponse } from "../_shared/aiContract.ts";
 import { checkSubscription, subscriptionRequiredResponse } from "../_shared/subscription.ts";
+import { consumeAiCall, usageExceededResponse } from "../_shared/aiUsage.ts";
 
 interface ScreenCriteria {
   marketCapMin?: number;
@@ -24,7 +25,6 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173'
 ];
 
-const AI_DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '20');
 const AI_ENABLED = (Deno.env.get('AI_ENABLED') ?? 'false') === 'true';
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
@@ -75,28 +75,24 @@ serve(async (req) => {
       );
     }
 
+    const userId = userData.user.id;
+
     // Paid feature: verified before any token is spent.
     const subscription = await checkSubscription(userData.user.email);
     if (!subscription.subscribed) {
       return subscriptionRequiredResponse(subscription, corsHeaders);
     }
 
-    const { data: usageAllowed, error: usageError } = await supabase.rpc('check_ai_usage', {
-      p_user_id: userData.user.id,
-      p_daily_limit: AI_DAILY_LIMIT
-    });
-    if (usageError) {
-      console.error('[AI Screener] Usage check error:', usageError);
+    // Allowance comes from the plan they bought, not a flat number.
+    const usage = await consumeAiCall(supabase, userId, subscription.monthlyAiCalls ?? 100);
+    if (!usage) {
       return new Response(
         JSON.stringify({ error: 'Usage check failed' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    if (!usageAllowed) {
-      return new Response(
-        JSON.stringify({ error: 'Daily AI limit reached. Please try again tomorrow.' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (!usage.allowed) {
+      return usageExceededResponse(usage, corsHeaders);
     }
 
     const { query } = await req.json();

@@ -2,6 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { checkSubscription, subscriptionRequiredResponse } from "../_shared/subscription.ts";
+import { consumeAiCall, usageExceededResponse } from "../_shared/aiUsage.ts";
 
 // CORS configuration - restrict to allowed origins
 const ALLOWED_ORIGINS = [
@@ -28,7 +29,6 @@ interface RateLimit {
 }
 const rateLimits = new Map<string, RateLimit>();
 const MAX_REQUESTS_PER_MINUTE = 10; // AI calls are expensive
-const AI_DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '20');
 const AI_ENABLED = (Deno.env.get('AI_ENABLED') ?? 'false') === 'true';
 
 function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
@@ -104,22 +104,16 @@ serve(async (req) => {
       return subscriptionRequiredResponse(subscription, corsHeaders);
     }
 
-    const { data: usageAllowed, error: usageError } = await supabase.rpc('check_ai_usage', {
-      p_user_id: userId,
-      p_daily_limit: AI_DAILY_LIMIT
-    });
-    if (usageError) {
-      console.error('[AI Risk Assessment] Usage check error:', usageError);
+    // Allowance comes from the plan they bought, not a flat number.
+    const usage = await consumeAiCall(supabase, userId, subscription.monthlyAiCalls ?? 100);
+    if (!usage) {
       return new Response(
         JSON.stringify({ error: 'Usage check failed' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    if (!usageAllowed) {
-      return new Response(
-        JSON.stringify({ error: 'Daily AI limit reached. Please try again tomorrow.' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (!usage.allowed) {
+      return usageExceededResponse(usage, corsHeaders);
     }
 
     console.log(`[AI Risk Assessment] Processing for authenticated user: ${userId.substring(0, 8)}...`);

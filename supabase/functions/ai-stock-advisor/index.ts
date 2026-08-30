@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { HOUSE_RULES, ANALYSIS_CHECKLIST, DISCLAIMER, MODEL_FAST } from "../_shared/aiContract.ts";
 import { loadPortfolioContext, formatPortfolioContext } from "../_shared/portfolioContext.ts";
 import { checkSubscription, subscriptionRequiredResponse } from "../_shared/subscription.ts";
+import { consumeAiCall, usageExceededResponse } from "../_shared/aiUsage.ts";
 
 // Rate limiting storage
 interface RateLimit {
@@ -12,7 +13,6 @@ interface RateLimit {
 }
 
 const rateLimits = new Map<string, RateLimit>();
-const AI_DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '20');
 const AI_ENABLED = (Deno.env.get('AI_ENABLED') ?? 'false') === 'true';
 
 // Checks rate limit for identifier
@@ -114,22 +114,16 @@ serve(async (req) => {
       );
     }
 
-    const { data: usageAllowed, error: usageError } = await supabase.rpc('check_ai_usage', {
-      p_user_id: userId,
-      p_daily_limit: AI_DAILY_LIMIT
-    });
-    if (usageError) {
-      console.error('[AI Stock Advisor] Usage check error:', usageError);
+    // Allowance comes from the plan they bought, not a flat number.
+    const usage = await consumeAiCall(supabase, userId, subscription.monthlyAiCalls ?? 100);
+    if (!usage) {
       return new Response(
         JSON.stringify({ error: 'Usage check failed' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    if (!usageAllowed) {
-      return new Response(
-        JSON.stringify({ error: 'Daily AI limit reached. Please try again tomorrow.' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (!usage.allowed) {
+      return usageExceededResponse(usage, corsHeaders);
     }
 
     const { message, conversationHistory = [] } = await req.json();

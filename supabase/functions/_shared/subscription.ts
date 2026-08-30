@@ -17,7 +17,29 @@ export interface SubscriptionCheck {
   subscribed: boolean;
   /** Populated when not subscribed, safe to show the user. */
   reason?: string;
+  /** Which plan they are on, when subscribed. */
+  tier?: SubscriptionTier;
+  /** AI calls their plan includes each month. */
+  monthlyAiCalls?: number;
 }
+
+export type SubscriptionTier = "basic" | "premium" | "unlimited";
+
+/**
+ * Plan entitlements, keyed by Stripe product.
+ *
+ * These live server-side because they decide what a caller is allowed to spend.
+ * The same figures appear on the pricing page, but a limit the client could
+ * assert is not a limit. Keep the two in step when pricing changes.
+ */
+const TIERS: Record<string, { tier: SubscriptionTier; monthlyAiCalls: number }> = {
+  prod_ThDN3TeB13Pusx: { tier: "basic", monthlyAiCalls: 100 },
+  prod_ThDNk8xTBMxIGN: { tier: "premium", monthlyAiCalls: 200 },
+  prod_ThDO59bJiy1UPG: { tier: "unlimited", monthlyAiCalls: 1000 },
+};
+
+/** Used when the subscription requirement is switched off entirely. */
+const UNGATED_MONTHLY_CALLS = 100;
 
 /**
  * Set AI_REQUIRE_SUBSCRIPTION=false to open the AI features to every
@@ -28,7 +50,9 @@ function subscriptionRequired(): boolean {
 }
 
 export async function checkSubscription(email: string | undefined): Promise<SubscriptionCheck> {
-  if (!subscriptionRequired()) return { subscribed: true };
+  if (!subscriptionRequired()) {
+    return { subscribed: true, monthlyAiCalls: UNGATED_MONTHLY_CALLS };
+  }
 
   if (!email) {
     return { subscribed: false, reason: "No email on account" };
@@ -59,7 +83,19 @@ export async function checkSubscription(email: string | undefined): Promise<Subs
       return { subscribed: false, reason: "No active subscription" };
     }
 
-    return { subscribed: true };
+    // Entitlement comes from the Stripe product, so an upgrade or downgrade
+    // takes effect the moment billing changes rather than on our next deploy.
+    const productId = subscriptions.data[0].items.data[0]?.price?.product;
+    const plan = typeof productId === "string" ? TIERS[productId] : undefined;
+
+    if (!plan) {
+      // An active subscription on a product we do not recognise: let them in on
+      // the smallest plan rather than deny someone who is paying.
+      console.warn("[subscription] Unrecognised product:", productId);
+      return { subscribed: true, monthlyAiCalls: TIERS.prod_ThDN3TeB13Pusx.monthlyAiCalls };
+    }
+
+    return { subscribed: true, tier: plan.tier, monthlyAiCalls: plan.monthlyAiCalls };
   } catch (error) {
     console.error(
       "[subscription] Stripe lookup failed:",

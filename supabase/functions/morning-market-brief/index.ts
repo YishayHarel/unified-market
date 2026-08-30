@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { HOUSE_RULES, MODEL_DEEP, parseJsonResponse, missingFields } from "../_shared/aiContract.ts";
 import { gapStatsForSymbol, describeGapStats } from "../_shared/marketStats.ts";
 import { checkSubscription, subscriptionRequiredResponse } from "../_shared/subscription.ts";
+import { consumeAiCall, usageExceededResponse } from "../_shared/aiUsage.ts";
 
 // CORS configuration - restrict to allowed origins.
 // The production origin was missing, so this endpoint only ever worked from a
@@ -25,7 +26,6 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
-const AI_DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '20');
 
 // Generating a brief is expensive, and one morning only warrants a few.
 const MAX_REQUESTS_PER_MINUTE = 5;
@@ -353,22 +353,16 @@ serve(async (req) => {
       );
     }
 
-    const { data: usageAllowed, error: usageError } = await supabase.rpc('check_ai_usage', {
-      p_user_id: userId,
-      p_daily_limit: AI_DAILY_LIMIT
-    });
-    if (usageError) {
-      console.error('[Morning Brief] Usage check error:', usageError);
+    // Allowance comes from the plan they bought, not a flat number.
+    const usage = await consumeAiCall(supabase, userId, subscription.monthlyAiCalls ?? 100);
+    if (!usage) {
       return new Response(
         JSON.stringify({ error: 'Usage check failed' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    if (!usageAllowed) {
-      return new Response(
-        JSON.stringify({ error: 'Daily AI limit reached. Please try again tomorrow.' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (!usage.allowed) {
+      return usageExceededResponse(usage, corsHeaders);
     }
 
     console.log(`[Morning Brief] Generating brief for user: ${userId.slice(0, 8)}…`);
