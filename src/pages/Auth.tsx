@@ -34,10 +34,6 @@ const Auth = () => {
   // precedence.
   const isRecovery = new URLSearchParams(window.location.search).has("recovery");
 
-  if (user && !isRecovery) {
-    return <Navigate to="/" replace />;
-  }
-
   useEffect(() => {
     if (!isRecovery) return;
 
@@ -165,6 +161,12 @@ const Auth = () => {
       setValidationErrors([]);
     }
   };
+
+  // Placed after every hook: an early return above them changes how many hooks
+  // run between renders, which crashes the component.
+  if (user && !isRecovery) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
