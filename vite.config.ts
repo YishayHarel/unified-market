@@ -12,11 +12,19 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     VitePWA({
-      // autoUpdate, and PWAUpdatePrompt reloads as soon as the new worker takes
-      // over. A prompt sounded safer, but in practice it left everyone —
-      // including us, repeatedly — running stale code until they noticed a
-      // toast and clicked it. Shipping a fix that users do not receive is worse
-      // than a reload they did not ask for.
+      // The service worker is being retired. It cached the app shell and then
+      // kept serving it, so deployed fixes did not reach anyone still running
+      // an older worker — including, repeatedly, a password reset that was
+      // fixed in production while the browser kept executing the broken build.
+      // Switching to autoUpdate did not help those already stuck, because the
+      // new worker has to be adopted by the old one first.
+      //
+      // selfDestroying ships a worker whose only job is to unregister itself
+      // and delete every cache. Browsers revalidate sw.js on navigation, so it
+      // reaches clients that are stuck. Offline support is worth little on a
+      // site whose entire purpose is live market data, and it is not worth a
+      // class of bug where users silently run last week's code.
+      selfDestroying: true,
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'robots.txt'],
       minify: false,
