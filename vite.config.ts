@@ -12,11 +12,12 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     VitePWA({
-      // 'prompt', not 'autoUpdate': autoUpdate activates the new worker but the
-      // page already open keeps serving the cached bundle, so returning users
-      // silently stay on the old build until they happen to reload twice.
-      // PWAUpdatePrompt surfaces the waiting worker and lets them apply it.
-      registerType: 'prompt',
+      // autoUpdate, and PWAUpdatePrompt reloads as soon as the new worker takes
+      // over. A prompt sounded safer, but in practice it left everyone —
+      // including us, repeatedly — running stale code until they noticed a
+      // toast and clicked it. Shipping a fix that users do not receive is worse
+      // than a reload they did not ask for.
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'robots.txt'],
       minify: false,
       manifest: {

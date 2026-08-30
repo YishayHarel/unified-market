@@ -1,32 +1,31 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { toast } from "sonner";
 
-// How often to ask the browser whether a new service worker has been published.
-// Without this the check only happens on a hard navigation, so a long-lived tab
-// can sit on a stale build indefinitely.
-const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-
-const UPDATE_TOAST_ID = "pwa-update-available";
+// How often to ask the browser whether a new build has been published. Without
+// this a long-lived tab only checks on a hard navigation.
+const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
- * Tells the user when a new build is available and applies it on request.
+ * Keeps the running app in step with what has been deployed.
  *
- * The service worker precaches the app shell, so a deploy does not reach anyone
- * who already has the site open — or who opens it from cache. This watches for
- * a waiting worker and offers a one-tap reload rather than forcing one, since
- * an unannounced refresh would discard whatever the user was in the middle of.
+ * This previously asked before updating. That sounded considerate and was
+ * wrong: people carried on using a stale build until they happened to notice a
+ * toast, so shipped fixes did not reach them — including several during
+ * development, where a deployed fix appeared broken because the browser was
+ * still running the previous bundle. A fix nobody receives is not a fix.
+ *
+ * The worker now activates on its own and the page reloads once it takes
+ * control, with a brief notice so the reload is not unexplained.
  */
 export default function PWAUpdatePrompt() {
-  const {
-    needRefresh: [needRefresh, setNeedRefresh],
-    updateServiceWorker,
-  } = useRegisterSW({
+  const reloading = useRef(false);
+
+  useRegisterSW({
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
       setInterval(() => {
-        // Ignore failures: offline or a transient network error just means we
-        // check again on the next tick.
+        // Offline or a transient failure just means we check again next tick.
         registration.update().catch(() => {});
       }, UPDATE_CHECK_INTERVAL_MS);
     },
@@ -36,20 +35,23 @@ export default function PWAUpdatePrompt() {
   });
 
   useEffect(() => {
-    if (!needRefresh) return;
+    if (!("serviceWorker" in navigator)) return;
 
-    toast("A new version of UnifiedMarket is available", {
-      id: UPDATE_TOAST_ID,
-      description: "Reload to get the latest fixes and data.",
-      duration: Infinity,
-      action: {
-        label: "Reload",
-        // updateServiceWorker(true) activates the waiting worker and reloads.
-        onClick: () => void updateServiceWorker(true),
-      },
-      onDismiss: () => setNeedRefresh(false),
-    });
-  }, [needRefresh, setNeedRefresh, updateServiceWorker]);
+    // Fires when a new worker takes control, which with autoUpdate means fresh
+    // assets are ready. The guard matters because the event can arrive twice.
+    const onControllerChange = () => {
+      if (reloading.current) return;
+      reloading.current = true;
+      toast("Updating to the latest version…", { duration: 1500 });
+      // Let the toast paint before the navigation discards it.
+      setTimeout(() => window.location.reload(), 600);
+    };
+
+    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+    return () => {
+      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+    };
+  }, []);
 
   return null;
 }
