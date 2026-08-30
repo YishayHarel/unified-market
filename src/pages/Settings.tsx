@@ -5,6 +5,7 @@ import { Settings as SettingsIcon, User, Bell, Crown } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import NotificationSettings from "@/components/NotificationSettings";
 import WatchlistAlerts from "@/components/WatchlistAlerts";
+import DisplayNameSettings from "@/components/DisplayNameSettings";
 
 const Settings = () => {
   const { user, subscription } = useAuth();
@@ -61,6 +62,9 @@ const Settings = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Display name — sits under Account since it is identity, not alerts. */}
+        <DisplayNameSettings />
 
         {/* Notification Settings */}
         <NotificationSettings />
