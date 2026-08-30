@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,10 @@ const Auth = () => {
   // and bounce off.
   const [mode, setMode] = useState<"auth" | "forgot">("auth");
   const [resetSent, setResetSent] = useState(false);
+  // The recovery link carries a one-time code that supabase-js exchanges for a
+  // session asynchronously. Rendering the form before that lands let people
+  // submit into "Auth session missing"; this tracks when it is actually ready.
+  const [recoveryState, setRecoveryState] = useState<"checking" | "ready" | "invalid">("checking");
   const { user, signIn, signUp } = useAuth();
 
   // Following the emailed link signs the user in, so the usual
@@ -33,6 +37,40 @@ const Auth = () => {
   if (user && !isRecovery) {
     return <Navigate to="/" replace />;
   }
+
+  useEffect(() => {
+    if (!isRecovery) return;
+
+    let settled = false;
+
+    // Fires once supabase-js has consumed the link and opened a session.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN" || event === "INITIAL_SESSION")) {
+        settled = true;
+        setRecoveryState("ready");
+      }
+    });
+
+    // It may also have completed before this effect ran.
+    void supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        settled = true;
+        setRecoveryState("ready");
+      }
+    });
+
+    // A link that is expired, already used, or opened in a different browser
+    // than it was requested from never produces a session. Say so rather than
+    // leaving a form that cannot succeed.
+    const timer = setTimeout(() => {
+      if (!settled) setRecoveryState("invalid");
+    }, 4000);
+
+    return () => {
+      sub.subscription.unsubscribe();
+      clearTimeout(timer);
+    };
+  }, [isRecovery]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,7 +191,31 @@ const Auth = () => {
             </Alert>
           )}
           
-          {isRecovery ? (
+          {isRecovery && recoveryState === "checking" ? (
+            <div className="text-center py-10 space-y-3">
+              <p className="text-sm text-muted-foreground">Verifying your link…</p>
+            </div>
+          ) : isRecovery && recoveryState === "invalid" ? (
+            <div className="text-center py-8 space-y-3">
+              <div className="flex justify-center">
+                <div className="p-3 rounded-full bg-destructive/10">
+                  <AlertCircle className="h-7 w-7 text-destructive" />
+                </div>
+              </div>
+              <p className="font-medium">This link is no longer valid</p>
+              <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                Reset links last an hour, work once, and must be opened in the
+                browser that requested them. Send a fresh one to try again.
+              </p>
+              <Button
+                onClick={() => {
+                  window.location.replace("/auth");
+                }}
+              >
+                Back to sign in
+              </Button>
+            </div>
+          ) : isRecovery ? (
             <form onSubmit={handleSetNewPassword} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="new-password">New password</Label>

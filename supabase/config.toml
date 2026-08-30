@@ -68,3 +68,8 @@ verify_jwt = false
 
 [functions.morning-market-brief]
 verify_jwt = true
+
+[functions.send-auth-email]
+# Supabase Auth calls this hook with its own Standard Webhooks signature, not a
+# user JWT, and the function verifies that signature itself.
+verify_jwt = false
