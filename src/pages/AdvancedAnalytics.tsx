@@ -2,6 +2,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import WatchlistAlerts from "@/components/WatchlistAlerts";
 import MarketSentimentDashboard from "@/components/MarketSentimentDashboard";
 import AIPortfolioOptimizer from "@/components/AIPortfolioOptimizer";
+import PortfolioHoldings from "@/components/PortfolioHoldings";
 import SmartNewsSummarizer from "@/components/SmartNewsSummarizer";
 import SectorHeatMap from "@/components/analytics/SectorHeatMap";
 import StockScreener from "@/components/analytics/StockScreener";
@@ -71,6 +72,9 @@ const AdvancedAnalytics = () => {
         </TabsContent>
         
         <TabsContent value="portfolio" className="space-y-6">
+          {/* Holdings first: the optimiser below has nothing to work with until
+              positions exist. */}
+          <PortfolioHoldings />
           <AIPortfolioOptimizer />
         </TabsContent>
         
