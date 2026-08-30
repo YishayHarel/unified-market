@@ -9,7 +9,18 @@ import DisplayNameSettings from "@/components/DisplayNameSettings";
 import ChangePasswordSettings from "@/components/ChangePasswordSettings";
 
 const Settings = () => {
-  const { user, subscription } = useAuth();
+  const { user, subscription, loading } = useAuth();
+
+  // The session is restored asynchronously, so `user` is null on the first
+  // render even when signed in. Redirecting on that bounced signed-in people
+  // straight back to the login page.
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
 
   if (!user) {
     return <Navigate to="/auth" replace />;
