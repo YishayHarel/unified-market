@@ -1,334 +1,319 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, useCallback } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Bell, Plus, Trash2, TrendingUp, TrendingDown, Activity, Percent, Calendar, DollarSign } from "lucide-react";
+import { Bell, Plus, Trash2, TrendingUp, TrendingDown, Activity, Percent, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
 import SignInPrompt from "@/components/SignInPrompt";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Alert {
   id: string;
   symbol: string;
   alert_type: string;
-  target_price?: number;
-  message?: string;
+  target_price: number | null;
+  message: string | null;
   is_active: boolean;
+  triggered_at: string | null;
   created_at: string;
 }
 
+/**
+ * Only the conditions the scheduled checker can actually evaluate.
+ *
+ * "Earnings Date" and "Dividend Date" used to be offered here. Nothing ever
+ * evaluated them, so choosing one created a row that could never fire. An
+ * option that cannot work is worse than a missing one — it looks like the
+ * alert is set.
+ */
+const ALERT_TYPES = [
+  {
+    value: "price_above",
+    label: "Price rises above",
+    unit: "$",
+    targetLabel: "Target price ($)",
+    placeholder: "150.00",
+    max: 1_000_000,
+    icon: TrendingUp,
+    tone: "text-green-500",
+  },
+  {
+    value: "price_below",
+    label: "Price falls below",
+    unit: "$",
+    targetLabel: "Target price ($)",
+    placeholder: "90.00",
+    max: 1_000_000,
+    icon: TrendingDown,
+    tone: "text-red-500",
+  },
+  {
+    value: "percent_up",
+    label: "Gains more than (in a day)",
+    unit: "%",
+    targetLabel: "Percentage gain (%)",
+    placeholder: "5",
+    max: 100,
+    icon: Percent,
+    tone: "text-green-500",
+  },
+  {
+    value: "percent_down",
+    label: "Drops more than (in a day)",
+    unit: "%",
+    targetLabel: "Percentage drop (%)",
+    placeholder: "5",
+    max: 100,
+    icon: Percent,
+    tone: "text-red-500",
+  },
+  {
+    value: "volume_spike",
+    label: "Trades unusual volume",
+    unit: "x",
+    targetLabel: "Volume multiple (2 = twice normal)",
+    placeholder: "2",
+    max: 100,
+    icon: Activity,
+    tone: "text-orange-500",
+  },
+] as const;
+
+const typeConfig = (value: string) => ALERT_TYPES.find((t) => t.value === value) ?? ALERT_TYPES[0];
+
+const formatTarget = (alert: Alert) => {
+  if (alert.target_price == null) return "";
+  const { unit } = typeConfig(alert.alert_type);
+  const value = Number(alert.target_price);
+  return unit === "$" ? `$${value}` : `${value}${unit}`;
+};
+
 const WatchlistAlerts = () => {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newAlert, setNewAlert] = useState({
-    symbol: '',
-    alert_type: 'price_above',
-    target_price: '',
-    message: ''
-  });
-  const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
   const { user } = useAuth();
-  const { isEnabled: notificationsEnabled, requestPermission } = usePushNotifications();
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Alert | null>(null);
+
+  const [symbol, setSymbol] = useState("");
+  const [alertType, setAlertType] = useState<string>("price_above");
+  const [target, setTarget] = useState("");
+  const [note, setNote] = useState("");
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("watchlist_alerts")
+      .select("id, symbol, alert_type, target_price, message, is_active, triggered_at, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Could not load alerts:", error.message);
+      toast.error("Could not load your alerts");
+    } else {
+      setAlerts((data ?? []) as Alert[]);
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     if (user) {
-      fetchAlerts();
-    }
-  }, [user]);
-
-  const fetchAlerts = async () => {
-    try {
-      const { data, error } = await (supabase
-        .from('watchlist_alerts') as any)
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setAlerts(data || []);
-    } catch (error) {
-      console.error('Error fetching alerts:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch watchlist alerts",
-        variant: "destructive",
-      });
-    } finally {
+      void load();
+    } else {
+      setAlerts([]);
       setLoading(false);
     }
-  };
+  }, [user, load]);
 
-  const addAlert = async () => {
-    if (!newAlert.symbol) {
-      toast({
-        title: "Error",
-        description: "Please enter a stock symbol",
-        variant: "destructive",
-      });
+  async function addAlert() {
+    if (!user) return;
+
+    const cleanSymbol = symbol.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g, "");
+    const config = typeConfig(alertType);
+    const targetNum = Number(target);
+
+    if (!cleanSymbol) return toast.error("Enter a ticker symbol.");
+    if (!Number.isFinite(targetNum) || targetNum <= 0 || targetNum > config.max) {
+      return toast.error(`Enter a ${config.unit === "$" ? "price" : "value"} between 0 and ${config.max}.`);
+    }
+
+    setSaving(true);
+    const { error } = await supabase.from("watchlist_alerts").insert({
+      user_id: user.id,
+      symbol: cleanSymbol,
+      alert_type: alertType,
+      target_price: targetNum,
+      message: note.trim() || null,
+    });
+    setSaving(false);
+
+    if (error) {
+      console.error("Could not add alert:", error.message);
+      toast.error("Could not save that alert");
       return;
     }
 
-    const requiresTargetPrice = ['price_above', 'price_below', 'percent_up', 'percent_down', 'volume_spike'].includes(newAlert.alert_type);
-    if (requiresTargetPrice && !newAlert.target_price) {
-      toast({
-        title: "Error",
-        description: "Please enter a target value",
-        variant: "destructive",
-      });
+    toast.success(`Alert set for ${cleanSymbol}`);
+    setSymbol("");
+    setTarget("");
+    setNote("");
+    setShowAddForm(false);
+    void load();
+  }
+
+  async function confirmDelete() {
+    const doomed = pendingDelete;
+    setPendingDelete(null);
+    if (!doomed) return;
+
+    const { error } = await supabase.from("watchlist_alerts").delete().eq("id", doomed.id);
+    if (error) {
+      toast.error("Could not delete that alert");
       return;
     }
+    toast.success("Alert deleted");
+    void load();
+  }
 
-    try {
-      const alertData = {
-        user_id: user?.id,
-        symbol: newAlert.symbol.toUpperCase(),
-        alert_type: newAlert.alert_type,
-        target_price: requiresTargetPrice ? parseFloat(newAlert.target_price) : null,
-        message: newAlert.message || null,
-      };
+  async function toggleAlert(alert: Alert) {
+    const { error } = await supabase
+      .from("watchlist_alerts")
+      .update({ is_active: !alert.is_active })
+      .eq("id", alert.id);
 
-      const { error } = await (supabase
-        .from('watchlist_alerts') as any)
-        .insert([alertData]);
-
-      if (error) throw error;
-
-      toast({
-        title: "Success",
-        description: "Alert added successfully",
-      });
-
-      // Prompt for notification permission if not enabled
-      if (!notificationsEnabled) {
-        requestPermission();
-      }
-
-      setNewAlert({ symbol: '', alert_type: 'price_above', target_price: '', message: '' });
-      setShowAddForm(false);
-      fetchAlerts();
-    } catch (error) {
-      console.error('Error adding alert:', error);
-      toast({
-        title: "Error",
-        description: "Failed to add alert",
-        variant: "destructive",
-      });
+    if (error) {
+      toast.error("Could not update that alert");
+      return;
     }
-  };
+    void load();
+  }
 
-  const deleteAlert = async (id: string) => {
-    try {
-      const { error } = await (supabase
-        .from('watchlist_alerts') as any)
-        .delete()
-        .eq('id', id);
+  /** Clears triggered_at so a fired alert starts watching again. */
+  async function rearm(alert: Alert) {
+    const { error } = await supabase
+      .from("watchlist_alerts")
+      .update({ triggered_at: null, is_active: true })
+      .eq("id", alert.id);
 
-      if (error) throw error;
-
-      toast({
-        title: "Success",
-        description: "Alert deleted successfully",
-      });
-
-      fetchAlerts();
-    } catch (error) {
-      console.error('Error deleting alert:', error);
-      toast({
-        title: "Error",
-        description: "Failed to delete alert",
-        variant: "destructive",
-      });
+    if (error) {
+      toast.error("Could not reset that alert");
+      return;
     }
-  };
-
-  const toggleAlert = async (id: string, isActive: boolean) => {
-    try {
-      const { error } = await (supabase
-        .from('watchlist_alerts') as any)
-        .update({ is_active: !isActive })
-        .eq('id', id);
-
-      if (error) throw error;
-
-      fetchAlerts();
-    } catch (error) {
-      console.error('Error toggling alert:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update alert",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const getAlertIcon = (alertType: string) => {
-    switch (alertType) {
-      case 'price_above':
-        return <TrendingUp className="h-4 w-4 text-green-500" />;
-      case 'price_below':
-        return <TrendingDown className="h-4 w-4 text-red-500" />;
-      case 'percent_up':
-        return <Percent className="h-4 w-4 text-green-500" />;
-      case 'percent_down':
-        return <Percent className="h-4 w-4 text-red-500" />;
-      case 'volume_spike':
-        return <Activity className="h-4 w-4 text-orange-500" />;
-      case 'earnings':
-        return <Calendar className="h-4 w-4 text-blue-500" />;
-      case 'dividend':
-        return <DollarSign className="h-4 w-4 text-purple-500" />;
-      default:
-        return <Bell className="h-4 w-4 text-blue-500" />;
-    }
-  };
-
-  const getAlertTypeLabel = (alertType: string) => {
-    switch (alertType) {
-      case 'price_above':
-        return 'Price Above';
-      case 'price_below':
-        return 'Price Below';
-      case 'percent_up':
-        return '% Gain';
-      case 'percent_down':
-        return '% Drop';
-      case 'volume_spike':
-        return 'Volume Spike';
-      case 'earnings':
-        return 'Earnings Date';
-      case 'dividend':
-        return 'Dividend Date';
-      default:
-        return alertType;
-    }
-  };
-
-  const getTargetLabel = (alertType: string) => {
-    switch (alertType) {
-      case 'price_above':
-      case 'price_below':
-        return 'Target Price ($)';
-      case 'percent_up':
-      case 'percent_down':
-        return 'Percentage (%)';
-      case 'volume_spike':
-        return 'Volume Multiplier (e.g., 2 = 2x normal)';
-      default:
-        return 'Target Value';
-    }
-  };
-
-  const formatTargetValue = (alertType: string, value?: number) => {
-    if (!value) return '';
-    switch (alertType) {
-      case 'price_above':
-      case 'price_below':
-        return `$${value}`;
-      case 'percent_up':
-      case 'percent_down':
-        return `${value}%`;
-      case 'volume_spike':
-        return `${value}x volume`;
-      default:
-        return value.toString();
-    }
-  };
-
-  const requiresTargetInput = (alertType: string) => {
-    return ['price_above', 'price_below', 'percent_up', 'percent_down', 'volume_spike'].includes(alertType);
-  };
+    toast.success(`${alert.symbol} is watching again`);
+    void load();
+  }
 
   if (!user) {
     return (
       <Card>
-        <CardContent className="p-6 text-center">
+        <CardContent className="p-6">
           <SignInPrompt
             title="Sign in to set price alerts"
-            description="Get notified when a stock you follow hits your target."
+            description="Get an email when a stock you follow hits your target."
           />
         </CardContent>
       </Card>
     );
   }
 
+  const config = typeConfig(alertType);
+
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2">
-          <Bell className="h-5 w-5" />
-          Watchlist Alerts
-        </CardTitle>
-        <Button
-          onClick={() => setShowAddForm(!showAddForm)}
-          size="sm"
-          variant="outline"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Add Alert
-        </Button>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5" />
+              Price Alerts
+            </CardTitle>
+            <CardDescription>
+              Checked every 15 minutes while the market is open. When one fires you get an email,
+              and it stops watching until you reset it.
+            </CardDescription>
+          </div>
+          <Button onClick={() => setShowAddForm(!showAddForm)} size="sm" variant="outline">
+            <Plus className="h-4 w-4 mr-2" />
+            Add alert
+          </Button>
+        </div>
       </CardHeader>
+
       <CardContent className="space-y-4">
         {showAddForm && (
           <Card className="border-dashed">
             <CardContent className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="symbol">Stock Symbol</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="alert-symbol">Stock symbol</Label>
                   <Input
-                    id="symbol"
+                    id="alert-symbol"
                     placeholder="AAPL"
-                    value={newAlert.symbol}
-                    onChange={(e) => setNewAlert({ ...newAlert, symbol: e.target.value })}
+                    value={symbol}
+                    onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                    autoCapitalize="characters"
+                    maxLength={12}
                   />
                 </div>
-                <div>
-                  <Label htmlFor="alert-type">Alert Type</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="alert-type">Tell me when it</Label>
                   <Select
-                    value={newAlert.alert_type}
-                    onValueChange={(value) => setNewAlert({ ...newAlert, alert_type: value, target_price: '' })}
+                    value={alertType}
+                    onValueChange={(value) => {
+                      setAlertType(value);
+                      setTarget("");
+                    }}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger id="alert-type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="price_above">Price Above</SelectItem>
-                      <SelectItem value="price_below">Price Below</SelectItem>
-                      <SelectItem value="percent_up">% Gain (Daily)</SelectItem>
-                      <SelectItem value="percent_down">% Drop (Daily)</SelectItem>
-                      <SelectItem value="volume_spike">Volume Spike</SelectItem>
-                      <SelectItem value="earnings">Earnings Date</SelectItem>
-                      <SelectItem value="dividend">Dividend Date</SelectItem>
+                      {ALERT_TYPES.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-              
-              {requiresTargetInput(newAlert.alert_type) && (
-                <div>
-                  <Label htmlFor="target-price">{getTargetLabel(newAlert.alert_type)}</Label>
-                  <Input
-                    id="target-price"
-                    type="number"
-                    step="0.01"
-                    placeholder={newAlert.alert_type === 'volume_spike' ? '2' : '150.00'}
-                    value={newAlert.target_price}
-                    onChange={(e) => setNewAlert({ ...newAlert, target_price: e.target.value })}
-                  />
-                </div>
-              )}
 
-              <div>
-                <Label htmlFor="message">Message (Optional)</Label>
+              <div className="space-y-2">
+                <Label htmlFor="alert-target">{config.targetLabel}</Label>
                 <Input
-                  id="message"
-                  placeholder="Custom alert message"
-                  value={newAlert.message}
-                  onChange={(e) => setNewAlert({ ...newAlert, message: e.target.value })}
+                  id="alert-target"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max={config.max}
+                  placeholder={config.placeholder}
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="alert-note">Note (optional)</Label>
+                <Input
+                  id="alert-note"
+                  placeholder="Why you're watching this"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  maxLength={200}
                 />
               </div>
 
@@ -336,8 +321,8 @@ const WatchlistAlerts = () => {
                 <Button variant="outline" onClick={() => setShowAddForm(false)}>
                   Cancel
                 </Button>
-                <Button onClick={addAlert}>
-                  Add Alert
+                <Button onClick={addAlert} disabled={saving}>
+                  {saving ? "Saving…" : "Add alert"}
                 </Button>
               </div>
             </CardContent>
@@ -345,59 +330,91 @@ const WatchlistAlerts = () => {
         )}
 
         {loading ? (
-          <div className="text-center py-4">
-            <p className="text-muted-foreground">Loading alerts...</p>
+          <div className="flex justify-center py-6">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : alerts.length === 0 ? (
           <div className="text-center py-8">
-            <Bell className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <Bell className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
             <p className="text-muted-foreground">No alerts set up yet.</p>
-            <p className="text-sm text-muted-foreground">Add your first alert to get notified about price movements.</p>
+            <p className="text-sm text-muted-foreground">
+              Add one and we will email you when the condition is met.
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {alerts.map((alert) => (
-              <Card key={alert.id} className={`${!alert.is_active ? 'opacity-50' : ''}`}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {getAlertIcon(alert.alert_type)}
-                      <div>
-                        <div className="font-semibold">{alert.symbol}</div>
+            {alerts.map((alert) => {
+              const { icon: Icon, tone, label } = typeConfig(alert.alert_type);
+              const fired = alert.triggered_at !== null;
+
+              return (
+                <div
+                  key={alert.id}
+                  className={`p-4 rounded-lg bg-muted/50 ${!alert.is_active && !fired ? "opacity-60" : ""}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <Icon className={`h-4 w-4 mt-1 shrink-0 ${tone}`} />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold">{alert.symbol}</span>
+                          {fired && (
+                            <Badge variant="secondary">
+                              Triggered {new Date(alert.triggered_at!).toLocaleDateString()}
+                            </Badge>
+                          )}
+                          {!alert.is_active && !fired && <Badge variant="outline">Paused</Badge>}
+                        </div>
                         <div className="text-sm text-muted-foreground">
-                          {getAlertTypeLabel(alert.alert_type)}
-                          {alert.target_price && ` ${formatTargetValue(alert.alert_type, alert.target_price)}`}
+                          {label} {formatTarget(alert)}
                         </div>
                         {alert.message && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {alert.message}
-                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">{alert.message}</div>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {fired ? (
+                        <Button variant="outline" size="sm" onClick={() => rearm(alert)}>
+                          Reset
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => toggleAlert(alert)}>
+                          {alert.is_active ? "Pause" : "Resume"}
+                        </Button>
+                      )}
                       <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => toggleAlert(alert.id, alert.is_active)}
-                      >
-                        {alert.is_active ? 'Disable' : 'Enable'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => deleteAlert(alert.id)}
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setPendingDelete(alert)}
+                        aria-label={`Delete ${alert.symbol} alert`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </CardContent>
+
+      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this {pendingDelete?.symbol} alert?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will stop being emailed about it. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 };

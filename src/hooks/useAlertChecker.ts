@@ -1,8 +1,14 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import {
+  isAlertAllowed,
+  readPreferences,
+  subscribeToPreferences,
+  type NotificationPreferences,
+} from '@/lib/notificationPreferences';
 
 interface SmartAlert {
   type: 'big_move' | 'stock_news' | 'market_news';
@@ -22,6 +28,13 @@ export const useAlertChecker = () => {
   const intervalRef = useRef<number | null>(null);
   const lastCheckRef = useRef<number>(0);
   const notifiedAlertsRef = useRef<Set<string>>(new Set());
+
+  // Read through a ref so changing a switch does not re-create the interval.
+  const [preferences, setPreferences] = useState<NotificationPreferences>(readPreferences);
+  const preferencesRef = useRef(preferences);
+  preferencesRef.current = preferences;
+
+  useEffect(() => subscribeToPreferences(setPreferences), []);
 
   const checkAlerts = useCallback(async () => {
     if (!user) return;
@@ -57,8 +70,14 @@ export const useAlertChecker = () => {
         console.log(`Received ${alerts.length} alerts`);
         
         for (const alert of alerts) {
+          // Respect the settings switches. They used to be written and never
+          // read, so turning one off changed nothing.
+          if (!isAlertAllowed(alert.type, preferencesRef.current)) {
+            continue;
+          }
+
           const alertKey = `${alert.type}-${alert.symbol || 'market'}-${alert.message.slice(0, 30)}`;
-          
+
           if (notifiedAlertsRef.current.has(alertKey)) {
             continue;
           }
