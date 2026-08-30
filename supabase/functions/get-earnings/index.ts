@@ -54,34 +54,61 @@ serve(async (req) => {
       to = t;
     }
 
-    const params = new URLSearchParams({ token: apiKey, from, to });
-    if (symbol) params.append("symbol", symbol);
-    // Optional wider calendar; default US-only — some Finnhub plans behave badly with international=true
-    if (body.international === true) params.append("international", "true");
+    // Finnhub caps this endpoint at roughly 1500 rows, and when a range exceeds
+    // that it truncates from the START — so a 60-day request came back
+    // beginning six weeks out, hiding precisely the earnings a reader wants.
+    // Requesting in shorter slices keeps every window under the cap.
+    const CHUNK_DAYS = 14;
+    const DAY_MS = 24 * 60 * 60 * 1000;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    async function fetchWindow(windowFrom: string, windowTo: string) {
+      const params = new URLSearchParams({ token: apiKey, from: windowFrom, to: windowTo });
+      if (symbol) params.append("symbol", symbol);
+      // Optional wider calendar; default US-only — some Finnhub plans behave badly with international=true
+      if (body.international === true) params.append("international", "true");
 
-    const response = await fetch(`https://finnhub.io/api/v1/calendar/earnings?${params}`, {
-      signal: controller.signal,
-      headers: { "User-Agent": "UnifiedMarket/1.0" },
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`Finnhub earnings ${response.status}:`, text.slice(0, 200));
-      return new Response(
-        JSON.stringify({
-          error: `Finnhub error ${response.status}`,
-          earningsCalendar: [],
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(`https://finnhub.io/api/v1/calendar/earnings?${params}`, {
+          signal: controller.signal,
+          headers: { "User-Agent": "UnifiedMarket/1.0" },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          console.error(`Finnhub earnings ${response.status} for ${windowFrom}..${windowTo}:`, text.slice(0, 200));
+          return [];
+        }
+        const data = await response.json();
+        return Array.isArray(data.earningsCalendar) ? data.earningsCalendar : [];
+      } catch (err) {
+        console.error(`Finnhub earnings failed for ${windowFrom}..${windowTo}:`, err);
+        return [];
+      } finally {
+        clearTimeout(timeoutId);
+      }
     }
 
-    const data = await response.json();
-    const raw = Array.isArray(data.earningsCalendar) ? data.earningsCalendar : [];
+    const windows: Array<[string, string]> = [];
+    for (let cursor = new Date(from); cursor <= new Date(to); ) {
+      const end = new Date(Math.min(cursor.getTime() + (CHUNK_DAYS - 1) * DAY_MS, new Date(to).getTime()));
+      windows.push([cursor.toISOString().split("T")[0], end.toISOString().split("T")[0]]);
+      cursor = new Date(end.getTime() + DAY_MS);
+    }
+
+    const chunks = await Promise.all(windows.map(([f, t]) => fetchWindow(f, t)));
+
+    // Windows are exclusive of each other, but dedupe on symbol+date anyway so a
+    // boundary overlap cannot double-list a company.
+    const seen = new Set<string>();
+    const raw = chunks.flat().filter((e: Record<string, unknown>) => {
+      const key = `${e.symbol}|${e.date}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    console.log(`Earnings ${from}..${to}: ${windows.length} windows, ${raw.length} rows`);
 
     if (raw.length === 0) {
       return new Response(JSON.stringify({ earningsCalendar: [], totalCount: 0 }), {
