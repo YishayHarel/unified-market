@@ -352,32 +352,37 @@ const StockDetail = () => {
               </div>
               <div>
                 <h1 className="text-xl font-bold">{displaySymbol}</h1>
-                <p className="text-sm text-muted-foreground">{displayName}</p>
+                <p className="text-sm text-muted-foreground truncate max-w-[8rem] sm:max-w-none">{displayName}</p>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Three labelled buttons overflow a phone: Discuss was clipped and
+              Buy sat off-screen entirely. Below sm the labels drop and the
+              icons carry the meaning, with aria-labels so the buttons stay
+              named for screen readers. */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Button 
               variant={isWatched ? "default" : "outline"} 
               size="sm"
               onClick={handleWatch}
               disabled={watchLoading}
+              aria-label={isWatched ? 'Stop watching' : 'Add to watchlist'}
             >
               {isWatched ? (
-                <Check className="w-4 h-4 mr-2" />
+                <Check className="w-4 h-4 sm:mr-2" />
               ) : (
-                <Eye className="w-4 h-4 mr-2" />
+                <Eye className="w-4 h-4 sm:mr-2" />
               )}
-              {isWatched ? 'Watching' : 'Watch'}
+              <span className="hidden sm:inline">{isWatched ? 'Watching' : 'Watch'}</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={handleDiscuss} disabled={isLoading}>
-              <MessageSquare className="w-4 h-4 mr-2" />
-              Discuss
+            <Button variant="outline" size="sm" onClick={handleDiscuss} disabled={isLoading} aria-label="Discuss">
+              <MessageSquare className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Discuss</span>
             </Button>
-            <Button size="sm" onClick={handleBuy} disabled={isLoading}>
-              <Plus className="w-4 h-4 mr-2" />
-              Buy
+            <Button size="sm" onClick={handleBuy} disabled={isLoading} aria-label="Buy">
+              <Plus className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Buy</span>
             </Button>
           </div>
         </div>
