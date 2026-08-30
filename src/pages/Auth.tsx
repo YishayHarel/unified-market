@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { signInSchema, signUpSchema, type SignInInput, type SignUpInput } from "@/lib/validations";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, Eye, EyeOff } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, ArrowLeft, MailCheck } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const Auth = () => {
   const [email, setEmail] = useState("");
@@ -16,10 +17,20 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  // Password recovery lives on this page rather than its own route: it is the
+  // same form with one field, and a separate page is one more thing to land on
+  // and bounce off.
+  const [mode, setMode] = useState<"auth" | "forgot">("auth");
+  const [resetSent, setResetSent] = useState(false);
   const { user, signIn, signUp } = useAuth();
 
-  // Redirect if already authenticated
-  if (user) {
+  // Following the emailed link signs the user in, so the usual
+  // already-authenticated redirect would bounce them home before they could
+  // choose a new password. Recovery is detected from the URL and takes
+  // precedence.
+  const isRecovery = new URLSearchParams(window.location.search).has("recovery");
+
+  if (user && !isRecovery) {
     return <Navigate to="/" replace />;
   }
 
@@ -55,6 +66,53 @@ const Auth = () => {
     setLoading(false);
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setValidationErrors([]);
+
+    const trimmed = email.trim();
+    if (!trimmed || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+      setValidationErrors(["Enter the email address on your account."]);
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+      redirectTo: `${window.location.origin}/auth?recovery=1`,
+    });
+    setLoading(false);
+
+    // Confirm regardless of the result: saying whether an address has an
+    // account would let anyone test which emails are registered.
+    if (error) console.warn("Password reset request failed:", error.message);
+    setResetSent(true);
+  };
+
+  const handleSetNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setValidationErrors([]);
+
+    // Same strength rules as signup — a reset must not be a way around them.
+    const result = signUpSchema.safeParse({ email: user?.email ?? "reset@placeholder.com", password });
+    if (!result.success) {
+      setValidationErrors(
+        result.error.errors.filter((err) => err.path[0] === "password").map((err) => err.message),
+      );
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    setLoading(false);
+
+    if (error) {
+      setValidationErrors([error.message]);
+      return;
+    }
+    // Drop the recovery marker so a refresh does not reopen this form.
+    window.location.replace("/");
+  };
+
   const clearErrors = () => {
     if (validationErrors.length > 0) {
       setValidationErrors([]);
@@ -65,8 +123,12 @@ const Auth = () => {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">📈 StockTracker</CardTitle>
-          <CardDescription>Sign in to your account or create a new one</CardDescription>
+          <CardTitle className="text-2xl font-bold">📈 UnifiedMarket</CardTitle>
+          <CardDescription>
+            {isRecovery
+              ? "Choose a new password for your account"
+              : "Sign in to your account or create a new one"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {validationErrors.length > 0 && (
@@ -82,6 +144,110 @@ const Auth = () => {
             </Alert>
           )}
           
+          {isRecovery ? (
+            <form onSubmit={handleSetNewPassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New password</Label>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Choose a new password"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      clearErrors();
+                    }}
+                    maxLength={128}
+                    autoComplete="new-password"
+                    required
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Must be at least 8 characters with uppercase, lowercase, and a number.
+                </p>
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "Saving..." : "Set new password"}
+              </Button>
+            </form>
+          ) : mode === "forgot" ? (
+            resetSent ? (
+              <div className="text-center py-6 space-y-3">
+                <div className="flex justify-center">
+                  <div className="p-3 rounded-full bg-primary/10">
+                    <MailCheck className="h-7 w-7 text-primary" />
+                  </div>
+                </div>
+                <p className="font-medium">Check your email</p>
+                <p className="text-sm text-muted-foreground">
+                  If an account exists for {email}, a reset link is on its way. The
+                  link expires after an hour.
+                </p>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setMode("auth");
+                    setResetSent(false);
+                  }}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to sign in
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotPassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="reset-email">Email</Label>
+                  <Input
+                    id="reset-email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      clearErrors();
+                    }}
+                    maxLength={255}
+                    autoComplete="email"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    We'll send a link to set a new password.
+                  </p>
+                </div>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Sending..." : "Send reset link"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => {
+                    setMode("auth");
+                    clearErrors();
+                  }}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to sign in
+                </Button>
+              </form>
+            )
+          ) : (
           <Tabs defaultValue="signin" className="w-full" onValueChange={clearErrors}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Sign In</TabsTrigger>
@@ -140,6 +306,17 @@ const Auth = () => {
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? "Signing in..." : "Sign In"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="link"
+                  className="w-full text-sm text-muted-foreground"
+                  onClick={() => {
+                    setMode("forgot");
+                    clearErrors();
+                  }}
+                >
+                  Forgot your password?
                 </Button>
               </form>
             </TabsContent>
@@ -203,6 +380,7 @@ const Auth = () => {
               </form>
             </TabsContent>
           </Tabs>
+          )}
         </CardContent>
       </Card>
     </div>
