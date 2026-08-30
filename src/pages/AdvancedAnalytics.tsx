@@ -21,17 +21,21 @@ const AdvancedAnalytics = () => {
       </header>
       
       <Tabs defaultValue="analytics" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 md:grid-cols-8">
-          <TabsTrigger value="ai-screener">AI Screener</TabsTrigger>
-          <TabsTrigger value="risk">Risk AI</TabsTrigger>
+        {/* Eight tabs will not fit a phone. The grid wrapped them onto rows the
+            container did not grow to hold, so the lower rows were clipped
+            behind the panel below. Scroll them instead, and only use the grid
+            once there is room for a single row. */}
+        <TabsList className="flex w-full justify-start overflow-x-auto md:grid md:grid-cols-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <TabsTrigger className="shrink-0" value="ai-screener">AI Screener</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="risk">Risk AI</TabsTrigger>
           {/* The portfolio panel already existed but had no trigger, so it
               could never be opened. */}
-          <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="screener">Screener</TabsTrigger>
-          <TabsTrigger value="technicals">Technicals</TabsTrigger>
-          <TabsTrigger value="sentiment">Sentiment</TabsTrigger>
-          <TabsTrigger value="alerts">Alerts</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="portfolio">Portfolio</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="screener">Screener</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="technicals">Technicals</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="sentiment">Sentiment</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="alerts">Alerts</TabsTrigger>
         </TabsList>
         
         <TabsContent value="ai-screener" className="space-y-6">

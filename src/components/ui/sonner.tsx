@@ -10,6 +10,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // The bottom navigation is fixed at the foot of every page, and toasts
+      // default to sitting exactly on top of it — the update prompt was
+      // covering the nav. Lift them clear of it.
+      offset="6rem"
+      mobileOffset="6rem"
       toastOptions={{
         classNames: {
           toast:
