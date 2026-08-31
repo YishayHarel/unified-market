@@ -118,31 +118,60 @@ function currencyForTicker(ticker: string, reported: string): { currency: string
 }
 
 /**
- * Dollars per unit of a currency, from Yahoo's keyless FX quotes.
+ * Dollars per unit of a currency.
  *
- * Cached for the life of the instance: a run touches at most a handful of
- * currencies and the rate does not need to be to the minute for sizing a
- * company into a ranking band.
+ * Frankfurter first: it publishes the European Central Bank's daily reference
+ * rates, is free and keyless, and is explicitly meant to be called — none of
+ * which is true of Yahoo's undocumented endpoint, which is used here on
+ * sufferance and could start refusing us without notice.
+ *
+ * The ECB set does not cover everything, though. Taiwan is the one that
+ * matters: no TWD reference rate means no market cap for TSMC, so Yahoo stays
+ * as a fallback for the handful of currencies Frankfurter does not carry.
+ *
+ * Cached for the life of the instance. A run touches a few currencies at most,
+ * and a reference rate does not need to be to the minute to sort a company
+ * into a size band.
  */
 const fxCache = new Map<string, number | null>();
 
-async function usdPerUnit(currency: string): Promise<number | null> {
-  if (currency === "USD") return 1;
-  if (fxCache.has(currency)) return fxCache.get(currency)!;
+async function rateFromFrankfurter(currency: string): Promise<number | null> {
+  try {
+    const response = await fetch(
+      `https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(currency)}&symbols=USD`,
+    );
+    if (!response.ok) return null;
+    const rate = Number((await response.json())?.rates?.USD);
+    return Number.isFinite(rate) && rate > 0 ? rate : null;
+  } catch {
+    return null;
+  }
+}
 
-  let rate: number | null = null;
+async function rateFromYahoo(currency: string): Promise<number | null> {
   try {
     const response = await fetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${currency}USD=X`,
       { headers: { "User-Agent": "Mozilla/5.0 (compatible; UnifiedMarket/1.0)" } },
     );
-    if (response.ok) {
-      const price = Number((await response.json())?.chart?.result?.[0]?.meta?.regularMarketPrice);
-      if (Number.isFinite(price) && price > 0) rate = price;
-    }
-  } catch (error) {
-    console.error(`[update-market-caps] fx ${currency}:`, (error as Error).message);
+    if (!response.ok) return null;
+    const price = Number((await response.json())?.chart?.result?.[0]?.meta?.regularMarketPrice);
+    return Number.isFinite(price) && price > 0 ? price : null;
+  } catch {
+    return null;
   }
+}
+
+async function usdPerUnit(currency: string): Promise<number | null> {
+  if (currency === "USD") return 1;
+  if (fxCache.has(currency)) return fxCache.get(currency)!;
+
+  let rate = await rateFromFrankfurter(currency);
+  if (rate == null) {
+    rate = await rateFromYahoo(currency);
+    if (rate != null) console.log(`[update-market-caps] ${currency} rate via Yahoo fallback`);
+  }
+  if (rate == null) console.error(`[update-market-caps] no rate for ${currency}`);
 
   fxCache.set(currency, rate);
   return rate;
