@@ -17,6 +17,12 @@ import {
 } from '@/lib/sessionManager';
 
 // Subscription tiers configuration
+//
+// The top tier was called "Unlimited Plan" on a card that stated, two lines
+// below the name, that it carries 1,000 AI calls a month. A paid plan whose
+// name contradicts its own stated limit is a claim that cannot be defended, so
+// it is "Pro Plan" here. The Stripe product still carries the old name and it
+// is what appears on the checkout page — rename it there to match.
 export const SUBSCRIPTION_TIERS = {
   basic: {
     name: 'Basic Plan',
@@ -33,7 +39,7 @@ export const SUBSCRIPTION_TIERS = {
     aiCallsPerMonth: 200,
   },
   unlimited: {
-    name: 'Unlimited Plan',
+    name: 'Pro Plan',
     price_id: 'price_1SjoxF8Eyj3l9vnAdUJ9Iepb',
     product_id: 'prod_ThDO59bJiy1UPG',
     price: 99.99,
