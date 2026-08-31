@@ -187,9 +187,14 @@ serve(async (req) => {
       );
     }
 
-    // Best effort: a failed prune should not fail the ingest.
+    // Best effort: a failed prune should not fail the ingest. The fundamentals
+    // cache is pruned here too rather than on its own schedule — it is a small
+    // table and this job already runs every fifteen minutes.
     const { error: pruneError } = await supabase.rpc("prune_old_news_articles");
     if (pruneError) console.warn("Prune failed:", pruneError.message);
+
+    const { error: cachePruneError } = await supabase.rpc("prune_fundamentals_cache");
+    if (cachePruneError) console.warn("Fundamentals cache prune failed:", cachePruneError.message);
 
     const tagged = rows.filter((row) => row.tickers.length > 0).length;
     console.log(`Ingested ${rows.length} articles (${tagged} with tickers)`);

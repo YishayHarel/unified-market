@@ -1,6 +1,7 @@
 // Get Stock Fundamentals - Fetches company financials from Finnhub API
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { nextFinnhubKey, getFinnhubKeys } from "../_shared/api-keys.ts"
 import { getCorsHeaders } from "../_shared/cors.ts"
 import {
@@ -9,6 +10,55 @@ import {
   getClientIdentifier,
   RATE_LIMIT_TIERS,
 } from "../_shared/rate-limit.ts"
+
+/**
+ * Fundamentals barely move intraday, and this endpoint was the most expensive
+ * thing on the site: five Finnhub calls per request, cached nowhere. Finnhub's
+ * free tier allows sixty calls a minute in total, so twelve people opening a
+ * stock page in the same minute exhausted the entire budget for the whole site.
+ *
+ * The cache lives in the database rather than in memory. Edge functions run
+ * across isolates and each keeps its own copy, so an in-memory map only helps
+ * when the request happens to land on a warm instance — measured here, three
+ * identical requests in a row all missed. A table is shared by all of them,
+ * which turns "five calls per page view" into "five calls per symbol per ten
+ * minutes", and traffic concentrates hard on a handful of tickers.
+ */
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
+function cacheClient() {
+  const url = Deno.env.get('SUPABASE_URL');
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+async function cacheGet(symbol: string): Promise<unknown | null> {
+  const supabase = cacheClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('fundamentals_cache')
+    .select('payload, fetched_at')
+    .eq('symbol', symbol)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  if (Date.now() - Date.parse(data.fetched_at as string) > CACHE_TTL_MS) return null;
+  return data.payload;
+}
+
+async function cacheSet(symbol: string, payload: unknown): Promise<void> {
+  const supabase = cacheClient();
+  if (!supabase) return;
+
+  // Best effort: a cache write failing should never fail the request.
+  const { error } = await supabase
+    .from('fundamentals_cache')
+    .upsert({ symbol, payload, fetched_at: new Date().toISOString() }, { onConflict: 'symbol' });
+
+  if (error) console.error('[fundamentals] cache write:', error.message);
+}
 
 serve(async (req) => {
   const origin = req.headers.get('origin');
@@ -41,8 +91,16 @@ serve(async (req) => {
       throw new Error('symbol is required')
     }
     
+    const cached = await cacheGet(String(symbol).toUpperCase());
+    if (cached) {
+      return new Response(JSON.stringify(cached), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
+        status: 200,
+      });
+    }
+
     console.log(`Fetching fundamentals for symbol: ${symbol}`)
-    
+
     const finnhubKey = nextFinnhubKey();
     if (!finnhubKey || !getFinnhubKeys().length) {
       console.error('FINNHUB_API_KEY or FINNHUB_API_KEYS not found in environment');
@@ -132,9 +190,18 @@ serve(async (req) => {
 
     console.log(`Returning fundamentals for ${symbol}:`, result);
 
+    // Only cache a real answer. Caching a response built from five failed
+    // fetches would pin an empty stock page in place for ten minutes.
+    if (result.marketCapitalization != null || result.quote != null) {
+      await cacheSet(String(symbol).toUpperCase(), result);
+    }
+
     return new Response(
       JSON.stringify(result),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
+        status: 200,
+      }
     )
   } catch (error) {
     console.error('Error in get-stock-fundamentals function:', error.message)
