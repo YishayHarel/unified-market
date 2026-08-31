@@ -77,7 +77,38 @@ async function upcomingEarningsSymbols(apiKey: string): Promise<string[]> {
   return [...symbols];
 }
 
-/** Market cap in dollars, or null when Finnhub has no profile for the symbol. */
+/**
+ * Dollars per unit of a currency, from Yahoo's keyless FX quotes.
+ *
+ * Cached for the life of the instance: a run touches at most a handful of
+ * currencies and the rate does not need to be to the minute for sizing a
+ * company into a ranking band.
+ */
+const fxCache = new Map<string, number | null>();
+
+async function usdPerUnit(currency: string): Promise<number | null> {
+  if (currency === "USD") return 1;
+  if (fxCache.has(currency)) return fxCache.get(currency)!;
+
+  let rate: number | null = null;
+  try {
+    const response = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${currency}USD=X`,
+      { headers: { "User-Agent": "Mozilla/5.0 (compatible; UnifiedMarket/1.0)" } },
+    );
+    if (response.ok) {
+      const price = Number((await response.json())?.chart?.result?.[0]?.meta?.regularMarketPrice);
+      if (Number.isFinite(price) && price > 0) rate = price;
+    }
+  } catch (error) {
+    console.error(`[update-market-caps] fx ${currency}:`, (error as Error).message);
+  }
+
+  fxCache.set(currency, rate);
+  return rate;
+}
+
+/** Market cap in dollars, or null when Finnhub has no usable profile. */
 async function fetchMarketCap(symbol: string, apiKey: string): Promise<number | null> {
   try {
     const response = await fetch(
@@ -88,18 +119,24 @@ async function fetchMarketCap(symbol: string, apiKey: string): Promise<number | 
 
     const profile = await response.json();
 
-    // The figure is in the listing's own currency, and for an ADR Finnhub
-    // resolves to the foreign listing: asking for IX returns Tokyo-listed
-    // 8591.T with a cap of 6,481,732 — millions of YEN. Taken as dollars that
-    // made ORIX a $6.5 trillion company, ranked above Nvidia at the top of the
-    // Top 100. There is no FX rate here to convert with, so anything not
-    // quoted in dollars is left alone rather than guessed at.
-    if (profile?.currency !== "USD") return null;
-
     // Finnhub reports this in millions.
     const millions = Number(profile?.marketCapitalization);
     if (!Number.isFinite(millions) || millions <= 0) return null;
-    return millions * 1_000_000;
+
+    // In the listing's own currency — and for an ADR, Finnhub resolves to the
+    // foreign listing: asking for IX returns Tokyo-listed 8591.T with a cap of
+    // 6,481,732, which is millions of YEN. Read as dollars that made ORIX a
+    // $6.5 trillion company sitting above Nvidia at the top of the Top 100.
+    // Converting rather than skipping keeps the real ADRs — TSM, ASML, SAP,
+    // Novo — which are exactly the foreign names a US reader cares about.
+    const currency = String(profile?.currency ?? "USD").toUpperCase();
+    const rate = await usdPerUnit(currency);
+    if (rate == null) {
+      console.warn(`[update-market-caps] no ${currency} rate; skipping ${symbol}`);
+      return null;
+    }
+
+    return millions * 1_000_000 * rate;
   } catch {
     return null;
   }
