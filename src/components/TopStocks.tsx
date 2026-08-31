@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, TrendingDown, Loader2, RefreshCw } from 'lucide-react';
+import { TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -20,17 +20,19 @@ interface TopStock {
 export const TopStocks = () => {
   const [stocks, setStocks] = useState<TopStock[]>([]);
   const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
   const [displayCount, setDisplayCount] = useState(20);
   const navigate = useNavigate();
 
   const fetchTopStocks = async () => {
     try {
-      const { data, error } = await (supabase
-        .from('stocks') as any)
+      const { data, error } = await supabase
+        .from('stocks')
         .select('id, symbol, name, market_cap, rank_score, last_return_1d, last_ranked_at')
         .eq('is_top_100', true)
-        .order('rank_score', { ascending: false })
+        // nullsFirst matters: 58 of the 60 rows had no score at all, so
+        // ordering by it put the list in effectively arbitrary order.
+        .order('rank_score', { ascending: false, nullsFirst: false })
+        .order('market_cap', { ascending: false, nullsFirst: false })
         .limit(100); // Fetch all top 100
 
       if (error) throw error;
@@ -41,23 +43,6 @@ export const TopStocks = () => {
       toast.error('Failed to load top stocks');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const updateRankings = async () => {
-    setUpdating(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('update-top-100');
-      
-      if (error) throw error;
-      
-      toast.success('Rankings updated successfully!');
-      await fetchTopStocks(); // Refresh the data
-    } catch (error) {
-      console.error('Error updating rankings:', error);
-      toast.error('Failed to update rankings');
-    } finally {
-      setUpdating(false);
     }
   };
 
@@ -106,32 +91,25 @@ export const TopStocks = () => {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <div>
-          <CardTitle>Top 100 Stocks</CardTitle>
-          <CardDescription>Market leaders and trending stocks ranked by our composite score</CardDescription>
-        </div>
-        <Button 
-          onClick={updateRankings} 
-          disabled={updating}
-          variant="outline"
-          size="sm"
-        >
-          {updating ? (
-            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-          ) : (
-            <RefreshCw className="h-4 w-4 mr-2" />
-          )}
-          Update Rankings
-        </Button>
+      {/*
+        The "Update Rankings" button that used to sit here called a function
+        gated on the scheduler's secret, so for every visitor it returned 401
+        and toasted "Failed to update rankings". The rankings are rebuilt after
+        each close on their own.
+      */}
+      <CardHeader className="pb-4">
+        <CardTitle>Top 100 Stocks</CardTitle>
+        <CardDescription>
+          Scored out of 10, mostly on company size with weight given to how much the stock is
+          moving today.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {stocks.length === 0 ? (
           <div className="text-center py-8">
-            <p className="text-muted-foreground">No top stocks data available</p>
-            <Button onClick={updateRankings} className="mt-4">
-              Initialize Rankings
-            </Button>
+            <p className="text-muted-foreground">
+              Rankings are not available right now. They are rebuilt after each market close.
+            </p>
           </div>
         ) : (
           <div className="space-y-4">

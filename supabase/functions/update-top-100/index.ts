@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { TOP_100_SYMBOLS, COMPANY_NAMES } from '../_shared/top100.ts'
 
 // CORS configuration - restrict to allowed origins
 const ALLOWED_ORIGINS = [
@@ -20,155 +21,107 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
-// Real top 100 US stocks by market cap (major companies)
-const TOP_100_SYMBOLS = [
-  'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.B', 'UNH', 'XOM',
-  'JNJ', 'JPM', 'V', 'PG', 'MA', 'HD', 'CVX', 'MRK', 'ABBV', 'LLY',
-  'PEP', 'KO', 'COST', 'AVGO', 'TMO', 'MCD', 'WMT', 'CSCO', 'ACN', 'ABT',
-  'CRM', 'DHR', 'BAC', 'ADBE', 'NKE', 'DIS', 'NFLX', 'CMCSA', 'VZ', 'INTC',
-  'PFE', 'TXN', 'PM', 'WFC', 'NEE', 'RTX', 'UPS', 'HON', 'T', 'QCOM',
-  'ORCL', 'IBM', 'AMD', 'LOW', 'BMY', 'SPGI', 'UNP', 'CAT', 'GS', 'MS',
-  'SBUX', 'BLK', 'DE', 'ELV', 'AMAT', 'ISRG', 'INTU', 'GILD', 'AXP', 'LMT',
-  'MDLZ', 'ADI', 'ADP', 'CVS', 'SYK', 'TJX', 'BKNG', 'MMC', 'VRTX', 'REGN',
-  'PLD', 'TMUS', 'AMT', 'ZTS', 'SCHW', 'C', 'MO', 'CB', 'SO', 'DUK',
-  'CI', 'BDX', 'EOG', 'SLB', 'PNC', 'ICE', 'CL', 'EQIX', 'USB', 'MMM'
-];
 
-// Company names mapping
-const COMPANY_NAMES: Record<string, string> = {
-  'AAPL': 'Apple Inc.',
-  'MSFT': 'Microsoft Corporation',
-  'GOOGL': 'Alphabet Inc.',
-  'AMZN': 'Amazon.com Inc.',
-  'NVDA': 'NVIDIA Corporation',
-  'META': 'Meta Platforms Inc.',
-  'TSLA': 'Tesla Inc.',
-  'BRK.B': 'Berkshire Hathaway Inc.',
-  'UNH': 'UnitedHealth Group Inc.',
-  'XOM': 'Exxon Mobil Corporation',
-  'JNJ': 'Johnson & Johnson',
-  'JPM': 'JPMorgan Chase & Co.',
-  'V': 'Visa Inc.',
-  'PG': 'Procter & Gamble Co.',
-  'MA': 'Mastercard Inc.',
-  'HD': 'The Home Depot Inc.',
-  'CVX': 'Chevron Corporation',
-  'MRK': 'Merck & Co. Inc.',
-  'ABBV': 'AbbVie Inc.',
-  'LLY': 'Eli Lilly and Company',
-  'PEP': 'PepsiCo Inc.',
-  'KO': 'The Coca-Cola Company',
-  'COST': 'Costco Wholesale Corporation',
-  'AVGO': 'Broadcom Inc.',
-  'TMO': 'Thermo Fisher Scientific Inc.',
-  'MCD': "McDonald's Corporation",
-  'WMT': 'Walmart Inc.',
-  'CSCO': 'Cisco Systems Inc.',
-  'ACN': 'Accenture plc',
-  'ABT': 'Abbott Laboratories',
-  'CRM': 'Salesforce Inc.',
-  'DHR': 'Danaher Corporation',
-  'BAC': 'Bank of America Corporation',
-  'ADBE': 'Adobe Inc.',
-  'NKE': 'NIKE Inc.',
-  'DIS': 'The Walt Disney Company',
-  'NFLX': 'Netflix Inc.',
-  'CMCSA': 'Comcast Corporation',
-  'VZ': 'Verizon Communications Inc.',
-  'INTC': 'Intel Corporation',
-  'PFE': 'Pfizer Inc.',
-  'TXN': 'Texas Instruments Inc.',
-  'PM': 'Philip Morris International Inc.',
-  'WFC': 'Wells Fargo & Company',
-  'NEE': 'NextEra Energy Inc.',
-  'RTX': 'RTX Corporation',
-  'UPS': 'United Parcel Service Inc.',
-  'HON': 'Honeywell International Inc.',
-  'T': 'AT&T Inc.',
-  'QCOM': 'QUALCOMM Inc.',
-  'ORCL': 'Oracle Corporation',
-  'IBM': 'International Business Machines',
-  'AMD': 'Advanced Micro Devices Inc.',
-  'LOW': "Lowe's Companies Inc.",
-  'BMY': 'Bristol-Myers Squibb Company',
-  'SPGI': 'S&P Global Inc.',
-  'UNP': 'Union Pacific Corporation',
-  'CAT': 'Caterpillar Inc.',
-  'GS': 'Goldman Sachs Group Inc.',
-  'MS': 'Morgan Stanley',
-  'SBUX': 'Starbucks Corporation',
-  'BLK': 'BlackRock Inc.',
-  'DE': 'Deere & Company',
-  'ELV': 'Elevance Health Inc.',
-  'AMAT': 'Applied Materials Inc.',
-  'ISRG': 'Intuitive Surgical Inc.',
-  'INTU': 'Intuit Inc.',
-  'GILD': 'Gilead Sciences Inc.',
-  'AXP': 'American Express Company',
-  'LMT': 'Lockheed Martin Corporation',
-  'MDLZ': 'Mondelez International Inc.',
-  'ADI': 'Analog Devices Inc.',
-  'ADP': 'Automatic Data Processing Inc.',
-  'CVS': 'CVS Health Corporation',
-  'SYK': 'Stryker Corporation',
-  'TJX': 'The TJX Companies Inc.',
-  'BKNG': 'Booking Holdings Inc.',
-  'MMC': 'Marsh & McLennan Companies',
-  'VRTX': 'Vertex Pharmaceuticals Inc.',
-  'REGN': 'Regeneron Pharmaceuticals Inc.',
-  'PLD': 'Prologis Inc.',
-  'TMUS': 'T-Mobile US Inc.',
-  'AMT': 'American Tower Corporation',
-  'ZTS': 'Zoetis Inc.',
-  'SCHW': 'Charles Schwab Corporation',
-  'C': 'Citigroup Inc.',
-  'MO': 'Altria Group Inc.',
-  'CB': 'Chubb Limited',
-  'SO': 'Southern Company',
-  'DUK': 'Duke Energy Corporation',
-  'CI': 'The Cigna Group',
-  'BDX': 'Becton Dickinson and Company',
-  'EOG': 'EOG Resources Inc.',
-  'SLB': 'Schlumberger Limited',
-  'PNC': 'PNC Financial Services Group',
-  'ICE': 'Intercontinental Exchange Inc.',
-  'CL': 'Colgate-Palmolive Company',
-  'EQIX': 'Equinix Inc.',
-  'USB': 'U.S. Bancorp',
-  'MMM': '3M Company'
-};
 
-interface StockQuote {
-  c: number; // Current price
-  d: number; // Change
-  dp: number; // Percent change
-  h: number; // High
-  l: number; // Low
-  o: number; // Open
-  pc: number; // Previous close
-}
-
-interface CompanyProfile {
-  marketCapitalization: number;
+interface StockRow {
+  symbol: string;
   name: string;
+  market_cap: number | null;
+  last_return_1d: number | null;
 }
 
-async function fetchWithRetry(url: string, retries = 2): Promise<Response> {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return response;
-      if (response.status === 429 && i < retries) {
-        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
-        continue;
+/**
+ * This job no longer calls Finnhub at all.
+ *
+ * It used to fire 200 metered calls — a quote and a profile for each of 100
+ * symbols — in bursts of ten with a half-second pause, roughly 240 a minute
+ * against a 60-a-minute allowance. Finnhub throttled whole contiguous blocks,
+ * so only 60 of the 100 symbols ever landed and the "Top 100" was a top 60.
+ * Pacing the calls did not fix it either: the retries on 429 are themselves
+ * calls, so a burst that trips the limiter keeps tripping it, and a paced run
+ * still lost 36 symbols in two solid blocks.
+ *
+ * Market caps now come from the table, kept fresh by update-market-caps, which
+ * is incremental and resumable and can afford to be slow. Daily returns come
+ * from Yahoo, which is keyless and unmetered. So this job is fast, complete,
+ * and cannot be rate-limited into a partial list.
+ */
+const YAHOO_CONCURRENCY = 10;
+
+/** A daily move this large or bigger earns full marks on the momentum half. */
+const FULL_MOVE = 0.05;
+
+/** How much of the composite score is size rather than today's move. */
+const SIZE_WEIGHT = 0.7;
+
+/** Today's move as a decimal fraction, from Yahoo's keyless chart endpoint. */
+async function fetchDailyReturns(symbols: string[]): Promise<Map<string, number>> {
+  const returns = new Map<string, number>();
+
+  for (let i = 0; i < symbols.length; i += YAHOO_CONCURRENCY) {
+    const batch = symbols.slice(i, i + YAHOO_CONCURRENCY);
+
+    await Promise.all(batch.map(async (symbol) => {
+      try {
+        // Yahoo uses a dash where Finnhub uses a dot for share classes.
+        const yahooSymbol = symbol.replace('.', '-');
+        const response = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?range=1d&interval=1d`,
+          { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; UnifiedMarket/1.0)' } },
+        );
+        if (!response.ok) return;
+
+        const meta = (await response.json())?.chart?.result?.[0]?.meta;
+        const price = Number(meta?.regularMarketPrice);
+        const previous = Number(meta?.chartPreviousClose ?? meta?.previousClose);
+        if (Number.isFinite(price) && Number.isFinite(previous) && previous > 0) {
+          returns.set(symbol, (price - previous) / previous);
+        }
+      } catch (error) {
+        console.error(`yahoo ${symbol}:`, (error as Error).message);
       }
-      return response;
-    } catch (error) {
-      if (i === retries) throw error;
-      await new Promise(r => setTimeout(r, 1000));
-    }
+    }));
   }
-  throw new Error('Max retries exceeded');
+
+  return returns;
+}
+
+/**
+ * The composite score the page advertises.
+ *
+ * There was none. rank_score was a fossil from some earlier process that
+ * nothing has written since December: seven symbols carried a value near 2 and
+ * every other row sat at exactly 1.0000, so ordering by it put the list in
+ * effectively arbitrary order — Abbott first, Nike second, and Apple, the
+ * largest company on the list by a factor of twenty, nowhere in the top twenty.
+ *
+ * Size is most of it, because that is what a "top" list means, but a large
+ * company having a quiet day should rank below a slightly smaller one that is
+ * actually moving. Size uses a log scale: the gap from $50B to $500B matters
+ * far more than the gap from $4T to $4.5T.
+ */
+function scoreStocks(rows: StockRow[]): Array<StockRow & { rank_score: number | null }> {
+  const logCaps = rows
+    .map((r) => (r.market_cap && r.market_cap > 0 ? Math.log10(r.market_cap) : null))
+    .filter((v): v is number => v !== null);
+
+  const minLog = logCaps.length ? Math.min(...logCaps) : 0;
+  const maxLog = logCaps.length ? Math.max(...logCaps) : 0;
+  const span = maxLog - minLog;
+
+  return rows.map((row) => {
+    if (!row.market_cap || row.market_cap <= 0) {
+      // No size, no score — better a blank than a number that means nothing.
+      return { ...row, rank_score: null };
+    }
+
+    const size = span > 0 ? (Math.log10(row.market_cap) - minLog) / span : 1;
+    const move = Math.min(Math.abs(row.last_return_1d ?? 0) / FULL_MOVE, 1);
+    const score = SIZE_WEIGHT * size + (1 - SIZE_WEIGHT) * move;
+
+    // Presented out of ten, which reads better than a bare fraction.
+    return { ...row, rank_score: Number((score * 10).toFixed(2)) };
+  });
 }
 
 Deno.serve(async (req) => {
@@ -195,138 +148,88 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
-    const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
-    if (!finnhubApiKey) {
-      throw new Error('FINNHUB_API_KEY not configured');
+    console.log('Starting top 100 update...');
+
+    // Caps come from the table; update-market-caps keeps them fresh.
+    // exchange is fetched in the same pass because it is NOT NULL and an upsert
+    // that inserts a symbol the universe does not yet carry has to supply one —
+    // and keeping the recorded MIC code beats overwriting it with a guess.
+    const { data: existingRows, error: readError } = await supabaseClient
+      .from('stocks')
+      .select('symbol, exchange, market_cap, market_cap_updated_at')
+      .in('symbol', TOP_100_SYMBOLS);
+
+    if (readError) throw readError;
+
+    const exchanges = new Map<string, string>();
+    const caps = new Map<string, number>();
+    const capStamps = new Map<string, string | null>();
+    for (const row of existingRows ?? []) {
+      const r = row as { symbol: string; exchange: string; market_cap: number | null; market_cap_updated_at: string | null };
+      exchanges.set(r.symbol, r.exchange);
+      if (r.market_cap && r.market_cap > 0) caps.set(r.symbol, Number(r.market_cap));
+      capStamps.set(r.symbol, r.market_cap_updated_at);
     }
 
-    console.log('Starting top 100 update with real market data...');
+    const returns = await fetchDailyReturns(TOP_100_SYMBOLS);
 
-    // First, clear old is_top_100 flags
+    const rows: StockRow[] = TOP_100_SYMBOLS.map((symbol) => ({
+      symbol,
+      name: COMPANY_NAMES[symbol] || symbol,
+      market_cap: caps.get(symbol) ?? null,
+      last_return_1d: returns.get(symbol) ?? null,
+    }));
+
+    console.log(`${caps.size} caps on file, ${returns.size} returns fetched, of ${TOP_100_SYMBOLS.length}`);
+
+    const scored = scoreStocks(rows);
+    const now = new Date().toISOString();
+
+    // Clear the flag only after the fetch succeeded. Clearing first meant a
+    // provider outage emptied the list before there was anything to put back.
     await supabaseClient
       .from('stocks')
       .update({ is_top_100: false })
-      .neq('id', 0);
+      .eq('is_top_100', true);
 
-    const stockUpdates: Array<{
-      symbol: string;
-      name: string;
-      market_cap: number | null;
-      last_return_1d: number | null;
-    }> = [];
+    // symbol is unique, so this is one round trip instead of the two hundred
+    // the select-then-update loop was making.
+    const { error: upsertError } = await supabaseClient
+      .from('stocks')
+      .upsert(
+        scored.map((stock) => ({
+          symbol: stock.symbol,
+          name: stock.name,
+          exchange: exchanges.get(stock.symbol) ?? 'US',
+          market_cap: stock.market_cap,
+          // Carried through, not stamped with now: this job read the cap from
+          // the table rather than fetching it, and claiming it is fresh would
+          // stop update-market-caps ever refreshing it.
+          market_cap_updated_at: capStamps.get(stock.symbol) ?? null,
+          last_return_1d: stock.last_return_1d,
+          rank_score: stock.rank_score,
+          is_top_100: true,
+          last_ranked_at: now,
+          updated_at: now,
+        })),
+        { onConflict: 'symbol' },
+      );
 
-    // Fetch data for each stock (batch in groups to avoid rate limits)
-    const batchSize = 10;
-    for (let i = 0; i < TOP_100_SYMBOLS.length; i += batchSize) {
-      const batch = TOP_100_SYMBOLS.slice(i, i + batchSize);
-      
-      const batchPromises = batch.map(async (symbol) => {
-        try {
-          // Fetch quote for price change
-          const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubApiKey}`;
-          const quoteResponse = await fetchWithRetry(quoteUrl);
-          
-          if (!quoteResponse.ok) {
-            console.log(`Quote failed for ${symbol}: ${quoteResponse.status}`);
-            return null;
-          }
-          
-          const quote: StockQuote = await quoteResponse.json();
-          
-          // Fetch company profile for market cap
-          const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubApiKey}`;
-          const profileResponse = await fetchWithRetry(profileUrl);
-          
-          let marketCap: number | null = null;
-          if (profileResponse.ok) {
-            const profile: CompanyProfile = await profileResponse.json();
-            // Finnhub returns market cap in millions
-            marketCap = profile.marketCapitalization ? profile.marketCapitalization * 1000000 : null;
-          }
-          
-          // Calculate 1-day return as decimal (e.g., 0.02 = 2%)
-          const lastReturn = quote.pc > 0 ? (quote.c - quote.pc) / quote.pc : null;
-          
-          return {
-            symbol,
-            name: COMPANY_NAMES[symbol] || symbol,
-            market_cap: marketCap,
-            last_return_1d: lastReturn
-          };
-        } catch (error) {
-          console.error(`Error fetching ${symbol}:`, error);
-          return {
-            symbol,
-            name: COMPANY_NAMES[symbol] || symbol,
-            market_cap: null,
-            last_return_1d: null
-          };
-        }
-      });
+    if (upsertError) throw upsertError;
 
-      const results = await Promise.all(batchPromises);
-      stockUpdates.push(...results.filter(r => r !== null));
-      
-      // Small delay between batches to respect rate limits
-      if (i + batchSize < TOP_100_SYMBOLS.length) {
-        await new Promise(r => setTimeout(r, 500));
-      }
-    }
-
-    console.log(`Fetched data for ${stockUpdates.length} stocks`);
-
-    // Upsert all stocks
-    for (const stock of stockUpdates) {
-      // Check if stock exists
-      const { data: existing } = await supabaseClient
-        .from('stocks')
-        .select('id')
-        .eq('symbol', stock.symbol)
-        .single();
-
-      if (existing) {
-        // Update existing
-        await supabaseClient
-          .from('stocks')
-          .update({
-            name: stock.name,
-            market_cap: stock.market_cap,
-            last_return_1d: stock.last_return_1d,
-            is_top_100: true,
-            last_ranked_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('symbol', stock.symbol);
-      } else {
-        // Insert new
-        await supabaseClient
-          .from('stocks')
-          .insert({
-            symbol: stock.symbol,
-            name: stock.name,
-            exchange: 'NASDAQ',
-            market_cap: stock.market_cap,
-            last_return_1d: stock.last_return_1d,
-            is_top_100: true,
-            last_ranked_at: new Date().toISOString()
-          });
-      }
-    }
-
-    // Get the top stocks by market cap for logging
     const { data: topStocks } = await supabaseClient
       .from('stocks')
-      .select('symbol, name, market_cap, last_return_1d')
+      .select('symbol, name, market_cap, last_return_1d, rank_score')
       .eq('is_top_100', true)
-      .order('market_cap', { ascending: false, nullsLast: true })
+      .order('rank_score', { ascending: false, nullsFirst: false })
       .limit(10);
 
-    console.log('Top 10 by market cap:', topStocks?.map(s => `${s.symbol}: $${(s.market_cap / 1e12).toFixed(2)}T`));
+    console.log('Top 10 by score:', topStocks?.map((s) => `${s.symbol}: ${s.rank_score}`).join(', '));
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Successfully updated ${stockUpdates.length} stocks with real market data`,
+        message: `Ranked ${scored.filter((s) => s.rank_score !== null).length} of ${TOP_100_SYMBOLS.length} stocks`,
         top_stocks: topStocks?.slice(0, 5).map(s => ({
           symbol: s.symbol,
           name: s.name,

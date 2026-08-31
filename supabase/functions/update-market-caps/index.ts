@@ -17,6 +17,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { nextFinnhubKey } from "../_shared/api-keys.ts";
+import { TOP_100_SYMBOLS } from "../_shared/top100.ts";
 
 /** Finnhub's free tier allows 60 calls a minute; stay comfortably inside it. */
 const CALLS_PER_MINUTE = 50;
@@ -125,7 +126,12 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const candidates = await upcomingEarningsSymbols(apiKey);
+    // The Top 100 list goes first: update-top-100 reads its caps straight from
+    // the table, so those are the ones that must never be missing. Everything
+    // reporting earnings soon follows, because that is what the calendar shows.
+    const earningsSymbols = await upcomingEarningsSymbols(apiKey);
+    const candidates = [...new Set([...TOP_100_SYMBOLS, ...earningsSymbols])];
+
     if (candidates.length === 0) {
       return new Response(JSON.stringify({ candidates: 0, updated: 0 }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
