@@ -39,6 +39,17 @@ const StockAutocomplete = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * Whether the person has actually engaged with this box.
+   *
+   * The search runs on every change to `value`, including the one the parent
+   * supplies on mount — so a screen that opens pre-filled with a symbol also
+   * opened with the suggestion list covering it. The Technicals tab starts on
+   * AAPL, and the first thing it showed was a stack of leveraged AAPL ETFs
+   * sitting on top of the price and the indicators.
+   */
+  const engaged = useRef(false);
+
   // Advanced search ranking algorithm optimized for financial search
   const calculateSearchScore = (stock: any, query: string): number => {
     const symbol = stock.symbol.toLowerCase();
@@ -126,7 +137,7 @@ const StockAutocomplete = ({
         .slice(0, 8);
 
       setResults(rankedResults);
-      setIsOpen(rankedResults.length > 0);
+      setIsOpen(engaged.current && rankedResults.length > 0);
       setHighlightedIndex(-1);
     } catch (error) {
       console.error("Error searching stocks:", error);
@@ -218,9 +229,15 @@ const StockAutocomplete = ({
           ref={inputRef}
           placeholder={placeholder}
           value={value}
-          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          onChange={(e) => {
+            engaged.current = true;
+            onChange(e.target.value.toUpperCase());
+          }}
           onKeyDown={handleKeyDown}
-          onFocus={() => results.length > 0 && setIsOpen(true)}
+          onFocus={() => {
+            engaged.current = true;
+            if (results.length > 0) setIsOpen(true);
+          }}
           className={cn(showIcon && "pl-10", "bg-card border border-border")}
         />
         {isSearching && (
