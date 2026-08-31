@@ -5,8 +5,18 @@
 
 import { supabase } from '@/integrations/supabase/client';
 
-// Session configuration
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes of inactivity
+/**
+ * How long an idle session survives.
+ *
+ * This was thirty minutes, which is a bank's setting, not a price tracker's.
+ * People leave this open in a tab all day; reading one long article was enough
+ * to come back signed out, with the watchlist and portfolio gone behind a login
+ * screen. Nothing here moves money or touches a brokerage — the exposure is a
+ * watchlist and hand-entered holdings — so the shared-computer case is worth
+ * covering, but not at the cost of signing out someone who is still using the
+ * site.
+ */
+const SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 hours of inactivity
 const SESSION_WARNING_MS = 5 * 60 * 1000; // Warn 5 minutes before expiry
 const ACTIVITY_DEBOUNCE_MS = 60 * 1000; // Debounce activity updates to 1 minute
 const SESSION_REFRESH_INTERVAL_MS = 10 * 60 * 1000; // Refresh session every 10 minutes
@@ -55,12 +65,12 @@ function resetSessionTimers(): void {
     warningTimeoutId = null;
   }
   
-  // Set warning timer
+  // Set warning timer. It reports SESSION_WARNING_MS, the time actually left —
+  // it used to pass the delay it had just waited out instead, so the warning
+  // fired at twenty-five minutes announcing "expires in 25 minutes" when five
+  // were left.
   warningTimeoutId = window.setTimeout(() => {
-    const remainingMs = SESSION_TIMEOUT_MS - SESSION_WARNING_MS;
-    if (onSessionWarningCallback) {
-      onSessionWarningCallback(remainingMs);
-    }
+    onSessionWarningCallback?.(SESSION_WARNING_MS);
   }, SESSION_TIMEOUT_MS - SESSION_WARNING_MS);
   
   // Set expiry timer
