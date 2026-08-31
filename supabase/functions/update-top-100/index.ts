@@ -54,9 +54,26 @@ const FULL_MOVE = 0.05;
 /** How much of the composite score is size rather than today's move. */
 const SIZE_WEIGHT = 0.7;
 
-/** Today's move as a decimal fraction, from Yahoo's keyless chart endpoint. */
-async function fetchDailyReturns(symbols: string[]): Promise<Map<string, number>> {
-  const returns = new Map<string, number>();
+interface DailyStats {
+  /** Today's move as a decimal fraction: 0.02 is a 2% day. */
+  returnPct: number | null;
+  /** Mean daily volume over the last three months, excluding today. */
+  avgVolume: number | null;
+  /** Today's volume against that average. */
+  relVolume: number | null;
+}
+
+/**
+ * Today's move and the volume picture, from one keyless Yahoo call per symbol.
+ *
+ * Three months of daily bars rather than one: the extra bars cost nothing and
+ * they are what the volume baseline needs. avg_volume and rel_volume have
+ * columns in the stocks table and had zero populated rows in all 29,841, so the
+ * screener showed "N/A" down both columns and offered a minimum-volume filter
+ * that could never match anything.
+ */
+async function fetchDailyStats(symbols: string[]): Promise<Map<string, DailyStats>> {
+  const stats = new Map<string, DailyStats>();
 
   for (let i = 0; i < symbols.length; i += YAHOO_CONCURRENCY) {
     const batch = symbols.slice(i, i + YAHOO_CONCURRENCY);
@@ -66,24 +83,52 @@ async function fetchDailyReturns(symbols: string[]): Promise<Map<string, number>
         // Yahoo uses a dash where Finnhub uses a dot for share classes.
         const yahooSymbol = symbol.replace('.', '-');
         const response = await fetch(
-          `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?range=1d&interval=1d`,
+          `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?range=3mo&interval=1d`,
           { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; UnifiedMarket/1.0)' } },
         );
         if (!response.ok) return;
 
-        const meta = (await response.json())?.chart?.result?.[0]?.meta;
+        const result = (await response.json())?.chart?.result?.[0];
+        const meta = result?.meta;
+
         const price = Number(meta?.regularMarketPrice);
-        const previous = Number(meta?.chartPreviousClose ?? meta?.previousClose);
-        if (Number.isFinite(price) && Number.isFinite(previous) && previous > 0) {
-          returns.set(symbol, (price - previous) / previous);
-        }
+
+        // The previous close has to come from the bars, not from meta. Over a
+        // 3mo range chartPreviousClose is the close *before the window opened*,
+        // so using it reported the three-month move as the day's: Tesla showed
+        // -21% and Microsoft +20% on an ordinary session.
+        const closes: number[] = (result?.indicators?.quote?.[0]?.close ?? [])
+          .filter((v: unknown) => typeof v === 'number' && v > 0) as number[];
+        const previous = closes.length >= 2 ? closes[closes.length - 2] : Number(meta?.previousClose);
+
+        const returnPct =
+          Number.isFinite(price) && Number.isFinite(previous) && previous > 0
+            ? (price - previous) / previous
+            : null;
+
+        const volumes: number[] = (result?.indicators?.quote?.[0]?.volume ?? [])
+          .filter((v: unknown) => typeof v === 'number' && v > 0) as number[];
+
+        // The last bar is today, which is the thing being compared rather than
+        // part of the baseline it is compared against.
+        const baseline = volumes.slice(0, -1);
+        const avgVolume = baseline.length > 0
+          ? Math.round(baseline.reduce((sum, v) => sum + v, 0) / baseline.length)
+          : null;
+
+        const today = Number(meta?.regularMarketVolume) || volumes[volumes.length - 1] || null;
+        const relVolume = avgVolume && today
+          ? Number((today / avgVolume).toFixed(2))
+          : null;
+
+        stats.set(symbol, { returnPct, avgVolume, relVolume });
       } catch (error) {
         console.error(`yahoo ${symbol}:`, (error as Error).message);
       }
     }));
   }
 
-  return returns;
+  return stats;
 }
 
 /**
@@ -171,16 +216,16 @@ Deno.serve(async (req) => {
       capStamps.set(r.symbol, r.market_cap_updated_at);
     }
 
-    const returns = await fetchDailyReturns(TOP_100_SYMBOLS);
+    const daily = await fetchDailyStats(TOP_100_SYMBOLS);
 
     const rows: StockRow[] = TOP_100_SYMBOLS.map((symbol) => ({
       symbol,
       name: COMPANY_NAMES[symbol] || symbol,
       market_cap: caps.get(symbol) ?? null,
-      last_return_1d: returns.get(symbol) ?? null,
+      last_return_1d: daily.get(symbol)?.returnPct ?? null,
     }));
 
-    console.log(`${caps.size} caps on file, ${returns.size} returns fetched, of ${TOP_100_SYMBOLS.length}`);
+    console.log(`${caps.size} caps on file, ${daily.size} quotes fetched, of ${TOP_100_SYMBOLS.length}`);
 
     const scored = scoreStocks(rows);
     const now = new Date().toISOString();
@@ -207,6 +252,8 @@ Deno.serve(async (req) => {
           // stop update-market-caps ever refreshing it.
           market_cap_updated_at: capStamps.get(stock.symbol) ?? null,
           last_return_1d: stock.last_return_1d,
+          avg_volume: daily.get(stock.symbol)?.avgVolume ?? null,
+          rel_volume: daily.get(stock.symbol)?.relVolume ?? null,
           rank_score: stock.rank_score,
           is_top_100: true,
           last_ranked_at: now,

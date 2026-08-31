@@ -49,6 +49,17 @@ const formatMarketCap = (cap: number | null): string => {
   return `$${cap.toLocaleString()}`;
 };
 
+/**
+ * last_return_1d is stored as a decimal fraction, so -0.0457 is a 4.57% fall.
+ * It was printed straight through with a percent sign, which turned NVDA's
+ * worst day in months into "-0.05%" and made the whole column look inert.
+ */
+const formatChange = (ret: number | null): string => {
+  if (ret == null) return "N/A";
+  const pct = ret * 100;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+};
+
 const formatVolume = (vol: number | null): string => {
   if (!vol) return "N/A";
   if (vol >= 1e9) return `${(vol / 1e9).toFixed(2)}B`;
@@ -91,11 +102,14 @@ const StockScreener = () => {
         const maxCap = parseFloat(filters.marketCapMax) * 1e9;
         query = query.lte("market_cap", maxCap);
       }
+      // last_return_1d is a decimal fraction: 0.02 is a 2% day. These filters
+      // are typed in percent, so "3" was screening for a 300% move and could
+      // never match anything.
       if (filters.changeMin) {
-        query = query.gte("last_return_1d", parseFloat(filters.changeMin));
+        query = query.gte("last_return_1d", parseFloat(filters.changeMin) / 100);
       }
       if (filters.changeMax) {
-        query = query.lte("last_return_1d", parseFloat(filters.changeMax));
+        query = query.lte("last_return_1d", parseFloat(filters.changeMax) / 100);
       }
       if (filters.volumeMin) {
         const minVol = parseFloat(filters.volumeMin) * 1e6; // Convert to millions
@@ -254,7 +268,7 @@ const StockScreener = () => {
                           </td>
                           <td className="px-3 py-2 text-right">
                             <span className={stock.last_return_1d && stock.last_return_1d >= 0 ? "text-green-500" : "text-red-500"}>
-                              {stock.last_return_1d ? `${stock.last_return_1d >= 0 ? "+" : ""}${stock.last_return_1d.toFixed(2)}%` : "N/A"}
+                              {formatChange(stock.last_return_1d)}
                             </span>
                           </td>
                           <td className="px-3 py-2 text-right">
