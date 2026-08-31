@@ -45,6 +45,10 @@ const UNIVERSE: StockRef[] = [
   { symbol: "PDD", name: "PDD Holdings Inc. Sponsored ADR" },
   { symbol: "RCKT", name: "Rocket Pharmaceuticals, Inc." },
   { symbol: "BYON", name: "Beyond, Inc." },
+  { symbol: "AI", name: "C3.ai, Inc." },
+  { symbol: "NWS", name: "NEWS CORP - CLASS B" },
+  { symbol: "EBTC", name: "ENTERPRISE BANCORP INC" },
+  { symbol: "TSM", name: "Taiwan Semiconductor Manufacturing Company Limited" },
 ];
 
 const CASES: Array<{ text: string; expect: string[]; why: string }> = [
@@ -93,6 +97,12 @@ const CASES: Array<{ text: string; expect: string[]; why: string }> = [
   // capital. Names that are function words are given up on entirely.
   { text: "Which AI Stock Will Bring You Profits in 2026 and Beyond?", expect: [], why: "Beyond Inc. vs the preposition, in Title Case" },
   { text: "$BYON jumps on the retailer's turnaround plan", expect: ["BYON"], why: "explicit notation still reaches a function-word name" },
+
+  // All three were live on the NVDA stock page at once.
+  { text: "This Semiconductor Giant Will Be the Ultimate Winner of the Artificial Intelligence (AI) Hardware Race", expect: [], why: "(AI) glosses the words before it, it is not C3.ai" },
+  { text: "Nvidia Just Delivered Bad News for AMD and Intel", expect: ["NVDA", "AMD"], why: "News Corp must not match 'Bad News' in Title Case" },
+  { text: "Reports from Dell and Hewlett Packard Enterprise are due", expect: [], why: "Enterprise Bancorp vs the last word of another company's name" },
+  { text: "Taiwan Semiconductor (TSM) raised its capex forecast", expect: ["TSM"], why: "a real parenthesised ticker whose initials do not spell it out" },
 ];
 
 const matcher = buildMatcher(UNIVERSE);

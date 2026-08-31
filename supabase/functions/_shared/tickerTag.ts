@@ -114,6 +114,10 @@ const AMBIGUOUS_NAMES = new Set([
   // oil-sanctions piece, and "Why Target Stock Keeps Going Up".
   "liquidity", "monday", "tuesday", "wednesday", "thursday", "friday",
   "saturday", "sunday", "strategy", "service", "services", "global",
+  // News Corp and Enterprise Bancorp, off "Nvidia Just Delivered Bad News"
+  // and "Hewlett Packard Enterprise" — both in Title Case, where requiring a
+  // capital proves nothing.
+  "news", "enterprise",
   // Corporate filler that survives suffix stripping on its own.
   "technology", "solutions", "systems", "holdings", "group", "brands", "power",
   "capital", "growth", "value", "income", "select", "core", "quality",
@@ -280,6 +284,32 @@ function isCredibleSingleWordMatch(token: Token): boolean {
   return /^[A-Z]/.test(token.raw);
 }
 
+/**
+ * Whether "(XYZ)" is spelling out the words just before it rather than naming a
+ * listing.
+ *
+ * "Artificial Intelligence (AI)" and "(NASDAQ: AI)" look identical to a regex,
+ * but the first is an abbreviation of the words in front of it. Comparing the
+ * initials of the preceding words against the letters in the brackets tells
+ * them apart, and no ticker convention is lost: a real mention reads
+ * "C3.ai (AI)", whose initials do not spell AI.
+ */
+function isInitialismGloss(text: string, parenIndex: number, token: string): boolean {
+  const letters = token.replace(/[^A-Z]/g, "");
+  if (letters.length < 2) return false;
+
+  const preceding = text
+    .slice(0, parenIndex)
+    .replace(/[^A-Za-z\s]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .slice(-letters.length);
+
+  if (preceding.length < letters.length) return false;
+
+  return preceding.map((word) => word[0].toUpperCase()).join("") === letters;
+}
+
 export function extractTickers(text: string, matcher: TickerMatcher): string[] {
   if (!text) return [];
   const found = new Set<string>();
@@ -291,7 +321,12 @@ export function extractTickers(text: string, matcher: TickerMatcher): string[] {
     if (matcher.bySymbol.has(symbol)) found.add(symbol);
   }
   for (const match of text.matchAll(/\(([A-Z][A-Z.\-]{0,6})\)/g)) {
-    if (matcher.bySymbol.has(match[1])) found.add(match[1]);
+    if (!matcher.bySymbol.has(match[1])) continue;
+    // Writers gloss a term with its initials — "Artificial Intelligence (AI)",
+    // "electric vehicle (EV)", "initial public offering (IPO)" — and every one
+    // of those is also a real ticker. AI tagged C3.ai onto a Taiwan Semi story.
+    if (isInitialismGloss(text, match.index ?? 0, match[1])) continue;
+    found.add(match[1]);
   }
   for (const match of text.matchAll(/\b(?:NYSE|NASDAQ|AMEX)\s*:\s*([A-Z][A-Z.\-]{0,6})\b/gi)) {
     const symbol = match[1].toUpperCase();
