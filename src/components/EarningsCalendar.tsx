@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Search, Calendar, Building2, TrendingUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,17 @@ async function invokeEarnings(body: { from: string; to: string; symbol?: string 
   return { list: payload?.earningsCalendar ?? [], message: null as string | null };
 }
 
+/**
+ * Smallest company shown by default.
+ *
+ * Roughly 2,000 companies report in any 60-day window and the great majority
+ * are closed-end funds, ADR shells and micro caps. Ordering by size fixed which
+ * of them came first, but the page still opens on whichever day is next — and
+ * on a quiet Monday that is Nuveen Real Estate Income and Jianpu Technology.
+ * Nobody opens an earnings calendar for those.
+ */
+const NOTABLE_MARKET_CAP = 2e9;
+
 const EarningsCalendar = () => {
   const [loading, setLoading] = useState(true);
   const [earnings, setEarnings] = useState<EarningsData[]>([]);
@@ -36,6 +47,20 @@ const EarningsCalendar = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [displayCount, setDisplayCount] = useState(20);
   const [listError, setListError] = useState<string | null>(null);
+  const [notableOnly, setNotableOnly] = useState(true);
+
+  /**
+   * The list the calendar actually shows, before paging.
+   *
+   * Falls back to everything when the filter would leave the page empty, which
+   * happens on a genuinely quiet stretch — better a small company than a blank
+   * calendar.
+   */
+  const visibleEarnings = useMemo(() => {
+    if (!notableOnly) return earnings;
+    const notable = earnings.filter((e) => (e.market_cap ?? 0) >= NOTABLE_MARKET_CAP);
+    return notable.length > 0 ? notable : earnings;
+  }, [earnings, notableOnly]);
 
   const loadDefaultRange = useCallback(async () => {
     setLoading(true);
@@ -66,8 +91,9 @@ const EarningsCalendar = () => {
   // When not searching, show first N rows from the cached full list (no refetch on "Load more")
   useEffect(() => {
     if (searchQuery.trim()) return;
-    setFilteredEarnings(earnings.slice(0, displayCount));
-  }, [displayCount, earnings, searchQuery]);
+    setFilteredEarnings(visibleEarnings.slice(0, displayCount));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayCount, earnings, searchQuery, notableOnly]);
 
   useEffect(() => {
     const run = async () => {
@@ -306,10 +332,27 @@ const EarningsCalendar = () => {
         </div>
       )}
 
-      <div className="mb-4 text-sm text-muted-foreground">
-        {searchQuery.trim()
-          ? `Showing ${filteredEarnings.length} result(s) for “${searchQuery.trim()}”`
-          : `Showing ${filteredEarnings.length} of ${earnings.length} upcoming earnings (next ~60 days)`}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-muted-foreground">
+          {searchQuery.trim()
+            ? `Showing ${filteredEarnings.length} result(s) for “${searchQuery.trim()}”`
+            : `Showing ${filteredEarnings.length} of ${visibleEarnings.length} upcoming earnings (next ~60 days)`}
+        </div>
+
+        {!searchQuery.trim() && (
+          <button
+            type="button"
+            onClick={() => {
+              setNotableOnly((on) => !on);
+              setDisplayCount(20);
+            }}
+            className="text-xs px-3 py-1.5 rounded-md border border-border bg-card hover:bg-muted transition-colors"
+          >
+            {notableOnly
+              ? `Showing companies over $2B · include all ${earnings.length}`
+              : "Showing every listing · notable only"}
+          </button>
+        )}
       </div>
 
       <div className="space-y-6">
@@ -362,7 +405,7 @@ const EarningsCalendar = () => {
         ))}
       </div>
 
-      {!searchQuery.trim() && filteredEarnings.length >= displayCount && earnings.length > displayCount && (
+      {!searchQuery.trim() && filteredEarnings.length >= displayCount && visibleEarnings.length > displayCount && (
         <div className="mt-6 text-center">
           <button
             type="button"
