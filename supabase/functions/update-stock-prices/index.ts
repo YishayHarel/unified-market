@@ -31,6 +31,15 @@ Deno.serve(async (req) => {
 
   // These endpoints write shared market data and spend provider quota, and
   // previously accepted any caller. Restricted to the scheduler.
+  //
+  // This check is also the only thing holding back cron job 1, an orphaned
+  // duplicate of the price schedule that fires every four hours carrying a
+  // legacy anon JWT and no cron secret. It cannot be deleted: pg_cron guards
+  // cron.job with a row policy of `username = CURRENT_USER`, the job was
+  // created by supabase_read_only_user, and neither the CLI nor the dashboard
+  // can be that role — both connect as postgres, which is not a superuser here
+  // and lacks BYPASSRLS. Only Supabase support can remove it. Until they do,
+  // removing or loosening this gate would bring a duplicate job back to life.
   const cronSecret = Deno.env.get('CRON_SECRET');
   if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {
     return new Response(
