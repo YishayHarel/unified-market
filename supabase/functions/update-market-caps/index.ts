@@ -17,7 +17,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { nextFinnhubKey } from "../_shared/api-keys.ts";
-import { TOP_100_SYMBOLS } from "../_shared/top100.ts";
+import { TOP_100_SEED_SYMBOLS } from "../_shared/top100.ts";
 
 /** Finnhub's free tier allows 60 calls a minute; stay comfortably inside it. */
 const CALLS_PER_MINUTE = 50;
@@ -87,6 +87,15 @@ async function fetchMarketCap(symbol: string, apiKey: string): Promise<number | 
     if (!response.ok) return null;
 
     const profile = await response.json();
+
+    // The figure is in the listing's own currency, and for an ADR Finnhub
+    // resolves to the foreign listing: asking for IX returns Tokyo-listed
+    // 8591.T with a cap of 6,481,732 — millions of YEN. Taken as dollars that
+    // made ORIX a $6.5 trillion company, ranked above Nvidia at the top of the
+    // Top 100. There is no FX rate here to convert with, so anything not
+    // quoted in dollars is left alone rather than guessed at.
+    if (profile?.currency !== "USD") return null;
+
     // Finnhub reports this in millions.
     const millions = Number(profile?.marketCapitalization);
     if (!Number.isFinite(millions) || millions <= 0) return null;
@@ -112,6 +121,19 @@ serve(async (req) => {
     });
   }
 
+  // Diagnostic: return the provider's raw profile for one symbol. Guessing at
+  // which field explains a wrong number is how bad data survives a fix.
+  const probeBody = await req.json().catch(() => ({}));
+  if (typeof probeBody?.probe === "string") {
+    const key = nextFinnhubKey();
+    const raw = await fetch(
+      `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(probeBody.probe)}&token=${key}`,
+    ).then((r) => r.json());
+    return new Response(JSON.stringify(raw), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const apiKey = nextFinnhubKey();
     if (!apiKey) {
@@ -126,17 +148,11 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // The Top 100 list goes first: update-top-100 reads its caps straight from
-    // the table, so those are the ones that must never be missing. Everything
-    // reporting earnings soon follows, because that is what the calendar shows.
+    // The seed list goes first: it is what the rankings fall back to before
+    // enough of the universe has a cap. Everything reporting earnings soon
+    // follows, because that is what the calendar shows.
     const earningsSymbols = await upcomingEarningsSymbols(apiKey);
-    const candidates = [...new Set([...TOP_100_SYMBOLS, ...earningsSymbols])];
-
-    if (candidates.length === 0) {
-      return new Response(JSON.stringify({ candidates: 0, updated: 0 }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const candidates = [...new Set([...TOP_100_SEED_SYMBOLS, ...earningsSymbols])];
 
     // Only the ones we do not already have a fresh number for. Symbols missing
     // from the table entirely are skipped rather than invented — the universe
@@ -165,6 +181,27 @@ serve(async (req) => {
       targets.push(...((data ?? []) as Target[]));
     }
 
+    // Then the rest of the listed universe, so the rankings stop depending on a
+    // hand-written list of what was big in 2023. Roughly 12,000 non-pink-sheet
+    // symbols at 100 a run works through in about a day, after which each run
+    // finds only what has gone stale.
+    if (targets.length < BATCH_SIZE) {
+      const { data, error } = await supabase
+        .from("stocks")
+        .select("symbol")
+        .neq("exchange", "OOTC")
+        .is("market_cap_updated_at", null)
+        .limit(BATCH_SIZE - targets.length);
+
+      if (error) console.error("[update-market-caps] universe query:", error.message);
+      else {
+        const already = new Set(targets.map((t) => t.symbol));
+        for (const row of (data ?? []) as Target[]) {
+          if (!already.has(row.symbol)) targets.push(row);
+        }
+      }
+    }
+
     if (targets.length === 0) {
       return new Response(
         JSON.stringify({ candidates: candidates.length, targets: 0, updated: 0, note: "all fresh" }),
@@ -182,17 +219,22 @@ serve(async (req) => {
 
       for (let j = 0; j < batch.length; j++) {
         const cap = caps[j];
-        if (cap == null) {
-          missing++;
-          continue;
-        }
+
+        // Stamp the timestamp even when Finnhub has no profile for the symbol.
+        // Otherwise every ETF, warrant and delisted shell stays permanently
+        // "never looked at", gets picked again every run, and the job never
+        // advances past the first hundred of them.
         const { error } = await supabase
           .from("stocks")
-          .update({ market_cap: cap, market_cap_updated_at: new Date().toISOString() })
+          .update({
+            ...(cap != null ? { market_cap: cap } : {}),
+            market_cap_updated_at: new Date().toISOString(),
+          })
           .eq("symbol", batch[j].symbol);
 
         if (error) console.error(`[update-market-caps] ${batch[j].symbol}:`, error.message);
-        else updated++;
+        else if (cap != null) updated++;
+        else missing++;
       }
 
       // Pace the calls so a run cannot trip the provider's per-minute limit.

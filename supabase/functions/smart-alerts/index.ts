@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { fetchDailyQuotes } from "../_shared/yahooQuote.ts"
 
 // CORS configuration - restrict to allowed origins
 const ALLOWED_ORIGINS = [
@@ -24,15 +25,6 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
 interface SavedStock {
   symbol: string;
   name: string | null;
-}
-
-interface PriceData {
-  symbol: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  volume: number;
-  avgVolume: number;
 }
 
 interface NewsArticle {
@@ -65,65 +57,6 @@ const MAJOR_NEWS_KEYWORDS = [
   's&p 500', 'dow jones', 'nasdaq', 'market crash', 'circuit breaker',
   'earnings shock', 'bankruptcy', 'merger', 'acquisition'
 ];
-
-async function fetchPrices(symbols: string[], apiKey: string): Promise<Map<string, PriceData>> {
-  const results = new Map<string, PriceData>();
-  if (symbols.length === 0) return results;
-  
-  const batchSize = 8;
-  
-  for (let i = 0; i < symbols.length; i += batchSize) {
-    const batch = symbols.slice(i, i + batchSize);
-    const symbolsParam = batch.join(',');
-    
-    try {
-      const response = await fetch(
-        `https://api.twelvedata.com/quote?symbol=${symbolsParam}&apikey=${apiKey}`,
-        { headers: { 'User-Agent': 'UnifiedMarket/1.0' } }
-      );
-      
-      if (!response.ok) continue;
-      
-      const data = await response.json();
-      
-      if (batch.length === 1) {
-        const symbol = batch[0];
-        if (data.close && data.close !== 'null') {
-          results.set(symbol, {
-            symbol,
-            price: parseFloat(data.close),
-            change: parseFloat(data.change || '0'),
-            changePercent: parseFloat(data.percent_change || '0'),
-            volume: parseInt(data.volume || '0', 10),
-            avgVolume: parseInt(data.average_volume || '0', 10)
-          });
-        }
-      } else {
-        for (const symbol of batch) {
-          const symbolData = data[symbol];
-          if (symbolData?.close && symbolData.close !== 'null' && !symbolData.code) {
-            results.set(symbol, {
-              symbol,
-              price: parseFloat(symbolData.close),
-              change: parseFloat(symbolData.change || '0'),
-              changePercent: parseFloat(symbolData.percent_change || '0'),
-              volume: parseInt(symbolData.volume || '0', 10),
-              avgVolume: parseInt(symbolData.average_volume || '0', 10)
-            });
-          }
-        }
-      }
-      
-      if (i + batchSize < symbols.length) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-    } catch (error) {
-      console.error(`Fetch error for batch:`, error);
-    }
-  }
-  
-  return results;
-}
 
 async function fetchStockNews(symbols: string[], finnhubKey: string): Promise<NewsArticle[]> {
   const allNews: NewsArticle[] = [];
@@ -202,7 +135,6 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const twelveDataKey = Deno.env.get('TWELVE_DATA_API_KEY');
     const finnhubKey = Deno.env.get('FINNHUB_API_KEY');
 
     const authHeader = req.headers.get('Authorization');
@@ -255,8 +187,11 @@ serve(async (req) => {
     console.log(`User has ${symbols.length} saved stocks: ${symbols.join(', ')}`);
 
     // 1. Check for big moves on saved stocks
-    if (symbols.length > 0 && twelveDataKey) {
-      const prices = await fetchPrices(symbols, twelveDataKey);
+    // Prices come from Yahoo now. This used to require TWELVE_DATA_API_KEY,
+    // which is not configured — so the whole big-move and volume-spike branch
+    // was skipped silently and the feed only ever carried news.
+    if (symbols.length > 0) {
+      const prices = await fetchDailyQuotes(symbols);
       console.log(`Fetched prices for ${prices.size} symbols`);
       
       for (const [symbol, priceData] of prices) {

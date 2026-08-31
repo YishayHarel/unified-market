@@ -1,10 +1,19 @@
 /**
- * The universe the Top 100 list ranks.
+ * A seed list of large US companies, frozen around 2023.
  *
- * Shared with update-market-caps so the two jobs cannot drift: one keeps these
- * symbols' market caps fresh, the other scores and orders them.
+ * This used to BE the Top 100: a hand-written array that the ranking job walked
+ * every night. Being hand-written, it had gone stale — no Palantir, no Micron,
+ * no Palo Alto, no Dell, no Coinbase — and nothing in the product could ever
+ * surface a company that was not already in it.
+ *
+ * The rankings are now derived from actual market caps across the listed
+ * universe. This list survives for two narrower jobs: it is what
+ * update-market-caps fills in first, so the rankings have something to work
+ * with on a fresh database, and it is the fallback if too few caps are known.
+ * The names are kept because the registry spellings in the stocks table are
+ * shouty ("MICRON TECHNOLOGY INC") where these are not.
  */
-export const TOP_100_SYMBOLS = [
+export const TOP_100_SEED_SYMBOLS = [
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.B', 'UNH', 'XOM',
   'JNJ', 'JPM', 'V', 'PG', 'MA', 'HD', 'CVX', 'MRK', 'ABBV', 'LLY',
   'PEP', 'KO', 'COST', 'AVGO', 'TMO', 'MCD', 'WMT', 'CSCO', 'ACN', 'ABT',

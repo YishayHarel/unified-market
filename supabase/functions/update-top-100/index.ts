@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { TOP_100_SYMBOLS, COMPANY_NAMES } from '../_shared/top100.ts'
+import { TOP_100_SEED_SYMBOLS, COMPANY_NAMES } from '../_shared/top100.ts'
+import { fetchDailyQuotes } from '../_shared/yahooQuote.ts'
 
 // CORS configuration - restrict to allowed origins
 const ALLOWED_ORIGINS = [
@@ -48,87 +49,27 @@ interface StockRow {
  */
 const YAHOO_CONCURRENCY = 10;
 
+/** How many companies the Top 100 list holds. */
+const UNIVERSE_SIZE = 100;
+
 /** A daily move this large or bigger earns full marks on the momentum half. */
 const FULL_MOVE = 0.05;
 
 /** How much of the composite score is size rather than today's move. */
 const SIZE_WEIGHT = 0.7;
 
-interface DailyStats {
-  /** Today's move as a decimal fraction: 0.02 is a 2% day. */
-  returnPct: number | null;
-  /** Mean daily volume over the last three months, excluding today. */
-  avgVolume: number | null;
-  /** Today's volume against that average. */
-  relVolume: number | null;
+/**
+ * last_return_1d is stored as a decimal fraction while the shared quote helper
+ * reports a percentage, so 2.5% has to become 0.025 on the way in. Getting this
+ * backwards is how the screener came to show a 4.6% fall as "-0.05%".
+ */
+function toFraction(changePercent: number | undefined): number | null {
+  return changePercent == null ? null : changePercent / 100;
 }
 
-/**
- * Today's move and the volume picture, from one keyless Yahoo call per symbol.
- *
- * Three months of daily bars rather than one: the extra bars cost nothing and
- * they are what the volume baseline needs. avg_volume and rel_volume have
- * columns in the stocks table and had zero populated rows in all 29,841, so the
- * screener showed "N/A" down both columns and offered a minimum-volume filter
- * that could never match anything.
- */
-async function fetchDailyStats(symbols: string[]): Promise<Map<string, DailyStats>> {
-  const stats = new Map<string, DailyStats>();
-
-  for (let i = 0; i < symbols.length; i += YAHOO_CONCURRENCY) {
-    const batch = symbols.slice(i, i + YAHOO_CONCURRENCY);
-
-    await Promise.all(batch.map(async (symbol) => {
-      try {
-        // Yahoo uses a dash where Finnhub uses a dot for share classes.
-        const yahooSymbol = symbol.replace('.', '-');
-        const response = await fetch(
-          `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?range=3mo&interval=1d`,
-          { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; UnifiedMarket/1.0)' } },
-        );
-        if (!response.ok) return;
-
-        const result = (await response.json())?.chart?.result?.[0];
-        const meta = result?.meta;
-
-        const price = Number(meta?.regularMarketPrice);
-
-        // The previous close has to come from the bars, not from meta. Over a
-        // 3mo range chartPreviousClose is the close *before the window opened*,
-        // so using it reported the three-month move as the day's: Tesla showed
-        // -21% and Microsoft +20% on an ordinary session.
-        const closes: number[] = (result?.indicators?.quote?.[0]?.close ?? [])
-          .filter((v: unknown) => typeof v === 'number' && v > 0) as number[];
-        const previous = closes.length >= 2 ? closes[closes.length - 2] : Number(meta?.previousClose);
-
-        const returnPct =
-          Number.isFinite(price) && Number.isFinite(previous) && previous > 0
-            ? (price - previous) / previous
-            : null;
-
-        const volumes: number[] = (result?.indicators?.quote?.[0]?.volume ?? [])
-          .filter((v: unknown) => typeof v === 'number' && v > 0) as number[];
-
-        // The last bar is today, which is the thing being compared rather than
-        // part of the baseline it is compared against.
-        const baseline = volumes.slice(0, -1);
-        const avgVolume = baseline.length > 0
-          ? Math.round(baseline.reduce((sum, v) => sum + v, 0) / baseline.length)
-          : null;
-
-        const today = Number(meta?.regularMarketVolume) || volumes[volumes.length - 1] || null;
-        const relVolume = avgVolume && today
-          ? Number((today / avgVolume).toFixed(2))
-          : null;
-
-        stats.set(symbol, { returnPct, avgVolume, relVolume });
-      } catch (error) {
-        console.error(`yahoo ${symbol}:`, (error as Error).message);
-      }
-    }));
-  }
-
-  return stats;
+function relativeVolume(quote: { volume: number; avgVolume: number } | undefined): number | null {
+  if (!quote?.avgVolume || !quote.volume) return null;
+  return Number((quote.volume / quote.avgVolume).toFixed(2));
 }
 
 /**
@@ -195,37 +136,54 @@ Deno.serve(async (req) => {
 
     console.log('Starting top 100 update...');
 
-    // Caps come from the table; update-market-caps keeps them fresh.
-    // exchange is fetched in the same pass because it is NOT NULL and an upsert
-    // that inserts a symbol the universe does not yet carry has to supply one —
-    // and keeping the recorded MIC code beats overwriting it with a guess.
-    const { data: existingRows, error: readError } = await supabaseClient
+    // The hundred largest companies we actually know the size of, rather than a
+    // hand-written array of what was large in 2023 — which had no Palantir, no
+    // Micron, no Palo Alto, no Dell, and no way for the product to ever surface
+    // a company that was not already in it. update-market-caps keeps the caps
+    // fresh; this just reads them.
+    //
+    // exchange comes along because it is NOT NULL and the upsert below has to
+    // supply one for any symbol being inserted.
+    const { data: rankedRows, error: readError } = await supabaseClient
       .from('stocks')
-      .select('symbol, exchange, market_cap, market_cap_updated_at')
-      .in('symbol', TOP_100_SYMBOLS);
+      .select('symbol, name, exchange, market_cap, market_cap_updated_at')
+      .neq('exchange', 'OOTC')
+      .gt('market_cap', 0)
+      .order('market_cap', { ascending: false })
+      .limit(UNIVERSE_SIZE);
 
     if (readError) throw readError;
 
-    const exchanges = new Map<string, string>();
-    const caps = new Map<string, number>();
-    const capStamps = new Map<string, string | null>();
-    for (const row of existingRows ?? []) {
-      const r = row as { symbol: string; exchange: string; market_cap: number | null; market_cap_updated_at: string | null };
-      exchanges.set(r.symbol, r.exchange);
-      if (r.market_cap && r.market_cap > 0) caps.set(r.symbol, Number(r.market_cap));
-      capStamps.set(r.symbol, r.market_cap_updated_at);
+    type Row = { symbol: string; name: string | null; exchange: string; market_cap: number; market_cap_updated_at: string | null };
+    let universe = (rankedRows ?? []) as Row[];
+
+    // Before the backfill has covered enough ground, fall back to the seed list
+    // so the page is never emptier than it was.
+    if (universe.length < UNIVERSE_SIZE / 2) {
+      console.warn(`Only ${universe.length} symbols have a cap; falling back to the seed list`);
+      const { data: seedRows } = await supabaseClient
+        .from('stocks')
+        .select('symbol, name, exchange, market_cap, market_cap_updated_at')
+        .in('symbol', TOP_100_SEED_SYMBOLS);
+      universe = (seedRows ?? []) as Row[];
     }
 
-    const daily = await fetchDailyStats(TOP_100_SYMBOLS);
+    const symbols = universe.map((r) => r.symbol);
+    const exchanges = new Map(universe.map((r) => [r.symbol, r.exchange]));
+    const capStamps = new Map(universe.map((r) => [r.symbol, r.market_cap_updated_at]));
 
-    const rows: StockRow[] = TOP_100_SYMBOLS.map((symbol) => ({
-      symbol,
-      name: COMPANY_NAMES[symbol] || symbol,
-      market_cap: caps.get(symbol) ?? null,
-      last_return_1d: daily.get(symbol)?.returnPct ?? null,
+    const daily = await fetchDailyQuotes(symbols, YAHOO_CONCURRENCY);
+
+    const rows: StockRow[] = universe.map((r) => ({
+      symbol: r.symbol,
+      // The registry spellings are shouty ("MICRON TECHNOLOGY INC"), so prefer
+      // the curated name where there is one.
+      name: COMPANY_NAMES[r.symbol] || r.name || r.symbol,
+      market_cap: r.market_cap ? Number(r.market_cap) : null,
+      last_return_1d: toFraction(daily.get(r.symbol)?.changePercent),
     }));
 
-    console.log(`${caps.size} caps on file, ${daily.size} quotes fetched, of ${TOP_100_SYMBOLS.length}`);
+    console.log(`${universe.length} symbols by market cap, ${daily.size} quotes fetched`);
 
     const scored = scoreStocks(rows);
     const now = new Date().toISOString();
@@ -253,7 +211,7 @@ Deno.serve(async (req) => {
           market_cap_updated_at: capStamps.get(stock.symbol) ?? null,
           last_return_1d: stock.last_return_1d,
           avg_volume: daily.get(stock.symbol)?.avgVolume ?? null,
-          rel_volume: daily.get(stock.symbol)?.relVolume ?? null,
+          rel_volume: relativeVolume(daily.get(stock.symbol)),
           rank_score: stock.rank_score,
           is_top_100: true,
           last_ranked_at: now,
@@ -276,7 +234,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Ranked ${scored.filter((s) => s.rank_score !== null).length} of ${TOP_100_SYMBOLS.length} stocks`,
+        message: `Ranked ${scored.filter((s) => s.rank_score !== null).length} of ${universe.length} stocks`,
         top_stocks: topStocks?.slice(0, 5).map(s => ({
           symbol: s.symbol,
           name: s.name,

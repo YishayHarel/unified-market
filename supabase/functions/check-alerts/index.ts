@@ -20,6 +20,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { fetchDailyQuotes, type DailyQuote } from "../_shared/yahooQuote.ts";
 
 interface Alert {
   id: string;
@@ -30,80 +31,13 @@ interface Alert {
   message: string | null;
 }
 
-interface Quote {
-  symbol: string;
-  price: number;
-  changePercent: number;
-  volume: number;
-  avgVolume: number;
-}
-
 /** Alert types this job can evaluate from a quote. The rest are placeholders. */
 const EVALUABLE = new Set(["price_above", "price_below", "percent_up", "percent_down", "volume_spike"]);
 
 /** How many symbols to have in flight at once, so one slow fetch is not serial. */
 const CONCURRENCY = 6;
 
-/**
- * Price, today's move, and the volume baseline, from one Yahoo call.
- *
- * Three months of daily bars is enough for a stable average without letting a
- * single quiet week distort it.
- */
-async function fetchQuote(symbol: string): Promise<Quote | null> {
-  try {
-    const response = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=3mo&interval=1d`,
-      { headers: { "User-Agent": "Mozilla/5.0 (compatible; UnifiedMarket/1.0)" } },
-    );
-    if (!response.ok) return null;
-
-    const result = (await response.json())?.chart?.result?.[0];
-    const meta = result?.meta;
-    const price = Number(meta?.regularMarketPrice);
-    if (!Number.isFinite(price) || price <= 0) return null;
-
-    const previousClose = Number(meta?.chartPreviousClose ?? meta?.previousClose);
-    const changePercent =
-      Number.isFinite(previousClose) && previousClose > 0
-        ? ((price - previousClose) / previousClose) * 100
-        : 0;
-
-    const volumes: number[] = (result?.indicators?.quote?.[0]?.volume ?? [])
-      .filter((v: unknown) => typeof v === "number" && v > 0) as number[];
-
-    // The last bar is today, which is the volume being compared, not part of
-    // the baseline it is compared against.
-    const baseline = volumes.slice(0, -1);
-    const avgVolume = baseline.length > 0
-      ? baseline.reduce((sum, v) => sum + v, 0) / baseline.length
-      : 0;
-
-    return {
-      symbol,
-      price,
-      changePercent,
-      volume: Number(meta?.regularMarketVolume) || volumes[volumes.length - 1] || 0,
-      avgVolume,
-    };
-  } catch (error) {
-    console.error(`[check-alerts] quote failed for ${symbol}:`, (error as Error).message);
-    return null;
-  }
-}
-
-async function fetchQuotes(symbols: string[]): Promise<Map<string, Quote>> {
-  const quotes = new Map<string, Quote>();
-  for (let i = 0; i < symbols.length; i += CONCURRENCY) {
-    const batch = await Promise.all(symbols.slice(i, i + CONCURRENCY).map(fetchQuote));
-    for (const quote of batch) {
-      if (quote) quotes.set(quote.symbol, quote);
-    }
-  }
-  return quotes;
-}
-
-function isTriggered(alert: Alert, quote: Quote): boolean {
+function isTriggered(alert: Alert, quote: DailyQuote): boolean {
   const target = alert.target_price;
   if (target == null || !Number.isFinite(Number(target))) return false;
   const value = Number(target);
@@ -124,7 +58,7 @@ function isTriggered(alert: Alert, quote: Quote): boolean {
   }
 }
 
-function describe(alert: Alert, quote: Quote): string {
+function describe(alert: Alert, quote: DailyQuote): string {
   const target = Number(alert.target_price);
   switch (alert.alert_type) {
     case "price_above":
@@ -201,7 +135,7 @@ serve(async (req) => {
     }
 
     const symbols = [...new Set((alerts as Alert[]).map((a) => a.symbol))];
-    const quotes = await fetchQuotes(symbols);
+    const quotes = await fetchDailyQuotes(symbols, CONCURRENCY);
     console.log(`[check-alerts] ${alerts.length} alerts, ${quotes.size}/${symbols.length} symbols priced`);
 
     const resendKey = Deno.env.get("RESEND_API_KEY");
