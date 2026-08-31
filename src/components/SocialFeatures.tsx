@@ -56,7 +56,10 @@ const SocialFeatures = () => {
     if (user) {
       fetchFollowing();
       fetchFollowers();
+    } else {
+      fetchPublicActivity();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   useEffect(() => {
@@ -236,6 +239,49 @@ const SocialFeatures = () => {
     }
   };
 
+  /**
+   * The community's recent posts, for people who are not signed in.
+   *
+   * The whole page used to be a sign-in wall, which is a poor answer on the one
+   * screen whose job is to show that there is a community here — and it does not
+   * match how the data is set up: posts, replies and profiles are all publicly
+   * readable, precisely so visitors can see the place before joining it.
+   */
+  const fetchPublicActivity = async () => {
+    try {
+      const { data: postsData } = await supabase
+        .from('discussion_posts')
+        .select('id, user_id, title, content, likes_count, created_at')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!postsData?.length) {
+        setActivity([]);
+        return;
+      }
+
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, display_name')
+        .in('user_id', [...new Set(postsData.map((p) => p.user_id))]);
+
+      const profileMap = new Map(profiles?.map((p) => [p.user_id, p.display_name || 'Anonymous']) || []);
+
+      setActivity(postsData.map((p) => ({
+        id: p.id,
+        type: 'post' as const,
+        user_id: p.user_id,
+        author_name: profileMap.get(p.user_id) || 'Anonymous',
+        title: p.title,
+        content: p.content,
+        likes_count: p.likes_count,
+        created_at: p.created_at,
+      })));
+    } catch (error) {
+      console.error('Error fetching public activity:', error);
+    }
+  };
+
   const handleUserSelect = (selectedUser: { user_id: string; display_name: string | null }) => {
     // Add the selected user to search results if not already there
     const newResult: FollowedUser = {
@@ -312,15 +358,48 @@ const SocialFeatures = () => {
 
   if (!user) {
     return (
-      <Card>
-        <CardContent className="p-6 text-center">
-          <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-          <SignInPrompt
-            title="Sign in to follow other investors"
-            description="Share picks, follow investors, and track how calls played out."
-          />
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-6 text-center">
+            <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <SignInPrompt
+              title="Sign in to follow other investors"
+              description="Share picks, follow investors, and track how calls played out."
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              What people are discussing
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {activity.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                No posts yet. Sign in to start the first conversation.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {activity.map((item) => (
+                  <div key={item.id} className="p-3 rounded-lg bg-muted/50">
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                      <span className="font-medium text-sm">{item.author_name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatTimeAgo(item.created_at)}
+                      </span>
+                    </div>
+                    {item.title && <p className="font-medium text-sm mb-1">{item.title}</p>}
+                    <p className="text-sm text-muted-foreground line-clamp-3">{item.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
