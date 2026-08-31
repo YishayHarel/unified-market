@@ -78,6 +78,46 @@ async function upcomingEarningsSymbols(apiKey: string): Promise<string[]> {
 }
 
 /**
+ * Currency implied by the exchange suffix on Finnhub's resolved ticker.
+ *
+ * Finnhub's own `currency` field cannot be trusted: it reports EQNR.OL — the
+ * Oslo listing of Equinor — as USD while giving the market cap in kroner, which
+ * put Equinor in the table at $918B against a real size near $75B. The suffix
+ * is what actually identifies the listing, and it is a closed, stable list.
+ *
+ * London is the trap worth naming: .L is quoted in PENCE, not pounds, so its
+ * rate is a hundredth of GBP.
+ */
+const EXCHANGE_CURRENCY: Record<string, string> = {
+  OL: "NOK", TW: "TWD", TWO: "TWD", AS: "EUR", T: "JPY", PA: "EUR", DE: "EUR",
+  F: "EUR", MI: "EUR", MC: "EUR", BR: "EUR", LS: "EUR", HE: "EUR", VI: "EUR",
+  IR: "EUR", AT: "EUR", SW: "CHF", TO: "CAD", V: "CAD", HK: "HKD", SS: "CNY",
+  SZ: "CNY", KS: "KRW", KQ: "KRW", ST: "SEK", CO: "DKK", AX: "AUD", NZ: "NZD",
+  SA: "BRL", MX: "MXN", TA: "ILS", IS: "TRY", JO: "ZAR", NS: "INR", BO: "INR",
+  SI: "SGD", BK: "THB", JK: "IDR", KL: "MYR", WA: "PLN", PR: "CZK", BD: "HUF",
+};
+
+/** Pence, not pounds — a hundredth of GBP. */
+const PENCE_SUFFIXES = new Set(["L", "IL"]);
+
+function currencyForTicker(ticker: string, reported: string): { currency: string; divisor: number } {
+  const match = /\.([A-Z]+)$/.exec(ticker.toUpperCase());
+  if (!match) {
+    // No suffix means a US listing, where the reported currency is reliable.
+    return { currency: reported, divisor: 1 };
+  }
+
+  const suffix = match[1];
+  if (PENCE_SUFFIXES.has(suffix)) return { currency: "GBP", divisor: 100 };
+
+  const mapped = EXCHANGE_CURRENCY[suffix];
+  // An unmapped suffix is a listing this code has never seen. Falling back to
+  // the reported currency is what produced the Equinor number, so prefer to
+  // skip it: a missing company is recoverable, a wrong one is not.
+  return mapped ? { currency: mapped, divisor: 1 } : { currency: "", divisor: 1 };
+}
+
+/**
  * Dollars per unit of a currency, from Yahoo's keyless FX quotes.
  *
  * Cached for the life of the instance: a run touches at most a handful of
@@ -129,14 +169,22 @@ async function fetchMarketCap(symbol: string, apiKey: string): Promise<number | 
     // $6.5 trillion company sitting above Nvidia at the top of the Top 100.
     // Converting rather than skipping keeps the real ADRs — TSM, ASML, SAP,
     // Novo — which are exactly the foreign names a US reader cares about.
-    const currency = String(profile?.currency ?? "USD").toUpperCase();
+    const { currency, divisor } = currencyForTicker(
+      String(profile?.ticker ?? symbol),
+      String(profile?.currency ?? "USD").toUpperCase(),
+    );
+    if (!currency) {
+      console.warn(`[update-market-caps] unknown exchange for ${profile?.ticker}; skipping ${symbol}`);
+      return null;
+    }
+
     const rate = await usdPerUnit(currency);
     if (rate == null) {
       console.warn(`[update-market-caps] no ${currency} rate; skipping ${symbol}`);
       return null;
     }
 
-    return millions * 1_000_000 * rate;
+    return (millions * 1_000_000 * rate) / divisor;
   } catch {
     return null;
   }
