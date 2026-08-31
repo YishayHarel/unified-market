@@ -66,6 +66,34 @@ const GENERIC_LEAD_WORDS = new Set([
 ]);
 
 /**
+ * English function words: prepositions, conjunctions, determiners, pronouns,
+ * auxiliaries.
+ *
+ * Requiring a capital letter stops most one-word false positives, but not in a
+ * Title Case headline where every word is capitalised anyway — "Which AI Stock
+ * Will Bring You Profits in 2026 and Beyond?" still tagged Beyond Inc.
+ *
+ * Unlike ordinary vocabulary, which is open-ended and cannot be listed, function
+ * words are a closed class: this is very nearly all of them, and no new ones are
+ * coming. A company whose whole name is one of these can only ever be matched
+ * through explicit notation, and that is the right trade — "Beyond", "Next" and
+ * "Under" appear as prepositions in headlines thousands of times more often than
+ * as the company.
+ */
+const FUNCTION_WORDS = new Set([
+  "about", "above", "across", "after", "against", "along", "among", "around",
+  "because", "before", "behind", "below", "beneath", "beside", "besides",
+  "between", "beyond", "both", "down", "during", "each", "either", "every",
+  "except", "from", "have", "here", "however", "inside", "into", "less", "many",
+  "more", "most", "much", "near", "neither", "next", "nothing", "once", "only",
+  "onto", "over", "past", "same", "since", "some", "such", "than", "that",
+  "their", "them", "then", "there", "these", "they", "this", "those", "through",
+  "toward", "towards", "under", "until", "upon", "very", "were", "what", "when",
+  "where", "which", "while", "will", "with", "within", "without", "would",
+  "your",
+]);
+
+/**
  * Company names that are also everyday words in market writing. "Target Corp"
  * normalises to "target", which would tag TGT on every "analyst raises price
  * target". These are matched only through explicit notation ($TGT, "(TGT)"),
@@ -157,7 +185,7 @@ function companyNeedles(name: string): string[] {
 
   // Short remnants ("hp", "3m") collide with prose too easily to match on.
   if (full.length < 4) return [];
-  if (AMBIGUOUS_NAMES.has(full)) return [];
+  if (AMBIGUOUS_NAMES.has(full) || FUNCTION_WORDS.has(full)) return [];
 
   const needles = [full];
 
@@ -169,7 +197,8 @@ function companyNeedles(name: string): string[] {
     short !== full &&
     short.length >= 4 &&
     !GENERIC_LEAD_WORDS.has(short.split(" ")[0]) &&
-    !AMBIGUOUS_NAMES.has(short)
+    !AMBIGUOUS_NAMES.has(short) &&
+    !FUNCTION_WORDS.has(short)
   ) {
     needles.push(short);
   }
@@ -207,6 +236,50 @@ export function buildMatcher(stocks: StockRef[]): TickerMatcher {
   return { bySymbol, byName, prominent, maxNameWords };
 }
 
+interface Token {
+  /** As written, so capitalisation survives. */
+  raw: string;
+  lower: string;
+}
+
+/**
+ * Splits text into words while keeping the original capitalisation.
+ *
+ * The name scan used to lowercase everything up front, which threw away the one
+ * signal that reliably separates a company from a common noun. Punctuation
+ * still splits words, so "Amazon.com" yields "Amazon" and "com" and matches the
+ * "amazon" needle.
+ */
+function tokenize(text: string): Token[] {
+  const tokens: Token[] = [];
+  for (const word of text.replace(/[^A-Za-z0-9]+/g, " ").split(/\s+/)) {
+    if (word) tokens.push({ raw: word, lower: word.toLowerCase() });
+  }
+  return tokens;
+}
+
+/**
+ * Whether a one-word company name matched here is plausibly the company.
+ *
+ * Single-word names are where this goes wrong, because plenty of listed
+ * companies are named after ordinary words. Two live examples: "U.S. strikes
+ * Iranian rocket launchers near Strait of Hormuz" was tagged RCKT because
+ * Rocket Pharmaceuticals exists, and "could become a dividend beast over the
+ * next decade and beyond" was tagged BYON for Beyond Inc.
+ *
+ * The denylist below caught neither, and never will catch the next one — it is
+ * a hand-written list of English words growing one bug at a time. The rule that
+ * actually generalises is that a company is a proper noun: every publisher
+ * capitalises Rocket Pharmaceuticals and none capitalises a rocket launcher.
+ * So a one-word name has to appear capitalised to count.
+ *
+ * This does not save a Title Case headline, where everything is capitalised and
+ * the signal is gone; the denylist is still what covers the worst of those.
+ */
+function isCredibleSingleWordMatch(token: Token): boolean {
+  return /^[A-Z]/.test(token.raw);
+}
+
 export function extractTickers(text: string, matcher: TickerMatcher): string[] {
   if (!text) return [];
   const found = new Set<string>();
@@ -242,16 +315,19 @@ export function extractTickers(text: string, matcher: TickerMatcher): string[] {
   //    Periods split words here so "Amazon.com" yields "amazon", matching the
   //    needle. Symbol matching above works on the raw text, so dotted tickers
   //    like BRK.B are unaffected.
-  const words = text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
+  const tokens = tokenize(text);
 
-  for (let i = 0; i < words.length; i++) {
-    for (let n = 1; n <= matcher.maxNameWords && i + n <= words.length; n++) {
-      const symbol = matcher.byName.get(words.slice(i, i + n).join(" "));
-      if (symbol) found.add(symbol);
+  for (let i = 0; i < tokens.length; i++) {
+    for (let n = 1; n <= matcher.maxNameWords && i + n <= tokens.length; n++) {
+      const needle = tokens.slice(i, i + n).map((t) => t.lower).join(" ");
+      const symbol = matcher.byName.get(needle);
+      if (!symbol) continue;
+
+      // Multi-word names are specific enough to stand on their own; a single
+      // word has to look like a proper noun.
+      if (n === 1 && !isCredibleSingleWordMatch(tokens[i])) continue;
+
+      found.add(symbol);
     }
   }
 

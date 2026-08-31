@@ -43,6 +43,8 @@ const UNIVERSE: StockRef[] = [
   { symbol: "GM", name: "General Motors Company" },
   { symbol: "C", name: "Citigroup Inc." },
   { symbol: "PDD", name: "PDD Holdings Inc. Sponsored ADR" },
+  { symbol: "RCKT", name: "Rocket Pharmaceuticals, Inc." },
+  { symbol: "BYON", name: "Beyond, Inc." },
 ];
 
 const CASES: Array<{ text: string; expect: string[]; why: string }> = [
@@ -79,6 +81,18 @@ const CASES: Array<{ text: string; expect: string[]; why: string }> = [
   { text: "After 10 years at United, CEO Scott Kirby is thinking big", expect: [], why: "Scott Technology must not match a person, and a shared first word is not a match" },
   { text: "General market conditions weighed on stocks", expect: [], why: "General Motors vs 'general'" },
   { text: "Nvidia is the beating heart of the AI boom", expect: ["NVDA"], why: "AI and other acronyms are not tickers here" },
+
+  // A one-word company name is a proper noun, so it has to be capitalised
+  // where it appears. Both of these were live on the news page.
+  { text: "U.S. strikes Iranian rocket launchers near Strait of Hormuz", expect: [], why: "Rocket Pharmaceuticals vs a rocket launcher" },
+  { text: "This tech giant could become a dividend beast over the next decade and beyond.", expect: [], why: "Beyond Inc. vs the preposition" },
+  { text: "Rocket Pharmaceuticals halts its gene therapy trial", expect: ["RCKT"], why: "the real company still matches" },
+  { text: "Shares of Rocket fell after the trial was halted", expect: ["RCKT"], why: "capitalised one-word name in prose is the company" },
+
+  // Capitalisation proves nothing in Title Case, where every word has a
+  // capital. Names that are function words are given up on entirely.
+  { text: "Which AI Stock Will Bring You Profits in 2026 and Beyond?", expect: [], why: "Beyond Inc. vs the preposition, in Title Case" },
+  { text: "$BYON jumps on the retailer's turnaround plan", expect: ["BYON"], why: "explicit notation still reaches a function-word name" },
 ];
 
 const matcher = buildMatcher(UNIVERSE);

@@ -22,11 +22,19 @@ interface NewsArticle {
   bearCount?: number;
 }
 
-const NewsSection = () => {
+/**
+ * Three was the only setting, and this component is the whole of the News page.
+ * A page titled "Market News" opening on three stories, with fifty already
+ * fetched and sitting in memory, reads as a broken feed rather than a compact
+ * one.
+ */
+const DEFAULT_INITIAL_COUNT = 12;
+
+const NewsSection = ({ initialCount = DEFAULT_INITIAL_COUNT }: { initialCount?: number }) => {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [news, setNews] = useState<NewsArticle[]>([]);
-  const [displayedCount, setDisplayedCount] = useState(3);
+  const [displayedCount, setDisplayedCount] = useState(initialCount);
 
   /** Symbols the signed-in user follows, used to lead the feed with their news. */
   const loadWatchlist = async (): Promise<string[]> => {
@@ -104,15 +112,7 @@ const NewsSection = () => {
   const handleLoadMore = () => {
     setLoadingMore(true);
     setTimeout(() => {
-      setDisplayedCount(prev => {
-        if (prev === 3) {
-          // First load more: show 10 total (3 + 7)
-          return Math.min(10, news.length);
-        } else {
-          // Subsequent load more: add 10 more each time
-          return Math.min(prev + 10, news.length);
-        }
-      });
+      setDisplayedCount(prev => Math.min(prev + 10, news.length));
       setLoadingMore(false);
     }, 500);
   };

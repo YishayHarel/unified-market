@@ -98,6 +98,61 @@ serve(async (req) => {
     auth: { persistSession: false },
   });
 
+  // Tuning the tagger fixes new articles and leaves the cache carrying whatever
+  // it was tagged with at the time — thousands of rows still pointing wrong
+  // stories at the wrong stock pages. This re-runs the matcher over what is
+  // already stored, which is the only way a tagging fix reaches the archive.
+  const body = await req.json().catch(() => ({}));
+  if (body?.retag === true) {
+    try {
+      const universe = await loadSymbolUniverse(supabase);
+      const matcher = buildMatcher(universe);
+
+      let scanned = 0;
+      let changed = 0;
+
+      for (let page = 0; page < 20; page++) {
+        const from = page * 1000;
+        const { data, error } = await supabase
+          .from("news_articles")
+          .select("id, title, description, tickers")
+          .order("published_at", { ascending: false })
+          .range(from, from + 999);
+
+        if (error) throw error;
+        if (!data?.length) break;
+
+        for (const row of data as Array<{ id: string; title: string; description: string | null; tickers: string[] | null }>) {
+          scanned++;
+          const retagged = extractTickers(`${row.title} ${row.description ?? ""}`, matcher);
+          const before = [...(row.tickers ?? [])].sort().join(",");
+          if (retagged.slice().sort().join(",") === before) continue;
+
+          const { error: updateError } = await supabase
+            .from("news_articles")
+            .update({ tickers: retagged })
+            .eq("id", row.id);
+
+          if (updateError) console.error(`retag ${row.id}:`, updateError.message);
+          else changed++;
+        }
+
+        if (data.length < 1000) break;
+      }
+
+      console.log(`Retagged ${changed} of ${scanned} cached articles`);
+      return new Response(JSON.stringify({ ok: true, scanned, changed }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return new Response(JSON.stringify({ error: message }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
   try {
     const [articles, universe] = await Promise.all([
       aggregateFeeds(GENERAL_FEEDS, INGEST_LIMIT),
